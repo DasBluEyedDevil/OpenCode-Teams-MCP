@@ -6,6 +6,8 @@ MCP server that implements Claude Code's [agent teams](https://code.claude.com/d
 
 </div>
 
+<video src=".github/assets/opencode-claude-teams.mov" controls width="100%"></video>
+
 ## About
 
 Claude Code has a built-in agent teams feature that lets multiple Claude Code instances coordinate as a team -- shared task lists, inter-agent messaging, and tmux-based spawning. But the protocol is internal, tightly coupled to Claude Code's own tooling.
