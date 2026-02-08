@@ -71,6 +71,7 @@ class TeamConfig(BaseModel):
     created_at: int = Field(alias="createdAt")
     lead_agent_id: str = Field(alias="leadAgentId")
     lead_session_id: str = Field(alias="leadSessionId")
+    project_dir: str | None = Field(alias="projectDir", default=None)
     members: list[MemberUnion]
 
 

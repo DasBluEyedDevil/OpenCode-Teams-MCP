@@ -84,7 +84,10 @@ def team_create(
     ls = _get_lifespan(ctx)
     if ls.get("active_team"):
         raise ToolError(f"Session already has active team: {ls['active_team']}. One team per session.")
-    result = teams.create_team(name=team_name, session_id=ls["session_id"], description=description)
+    result = teams.create_team(
+        name=team_name, session_id=ls["session_id"], description=description,
+        project_dir=Path.cwd(),
+    )
     ls["active_team"] = team_name
     return result.model_dump()
 
@@ -172,6 +175,15 @@ def spawn_teammate_tool(
             desktop_binary = discover_desktop_binary()
         except FileNotFoundError as e:
             raise ToolError(str(e))
+
+    # Backfill project_dir on team config if not already set (pre-existing teams)
+    try:
+        config = teams.read_config(team_name)
+        if config.project_dir is None:
+            config.project_dir = str(Path.cwd())
+            teams.write_config(team_name, config)
+    except Exception:
+        pass  # Best effort
 
     member = spawn_teammate(
         team_name=team_name,
@@ -457,9 +469,10 @@ def force_kill_teammate(team_name: str, agent_name: str) -> dict:
         if member.tmux_pane_id:
             kill_tmux_pane(member.tmux_pane_id)
 
+    project_dir = teams.get_project_dir(team_name)
     teams.remove_member(team_name, agent_name)
     tasks.reset_owner_tasks(team_name, agent_name)
-    cleanup_agent_config(Path.cwd(), agent_name)
+    cleanup_agent_config(project_dir, agent_name)
     return {"success": True, "message": f"{agent_name} has been stopped."}
 
 
@@ -490,9 +503,10 @@ def process_shutdown_approved(team_name: str, agent_name: str) -> dict:
     their tasks. Call this after confirming shutdown_approved in the lead inbox."""
     if agent_name == "team-lead":
         raise ToolError("Cannot process shutdown for team-lead")
+    project_dir = teams.get_project_dir(team_name)
     teams.remove_member(team_name, agent_name)
     tasks.reset_owner_tasks(team_name, agent_name)
-    cleanup_agent_config(Path.cwd(), agent_name)
+    cleanup_agent_config(project_dir, agent_name)
     return {"success": True, "message": f"{agent_name} removed from team."}
 
 

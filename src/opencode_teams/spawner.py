@@ -13,7 +13,12 @@ import time
 from pathlib import Path
 
 from opencode_teams import messaging, teams
-from opencode_teams.config_gen import generate_agent_config, write_agent_config, ensure_opencode_json
+from opencode_teams.config_gen import (
+    cleanup_agent_config,
+    generate_agent_config,
+    write_agent_config,
+    ensure_opencode_json,
+)
 from opencode_teams.models import AgentHealthStatus, COLOR_PALETTE, InboxMessage, TeammateMember
 from opencode_teams.teams import _VALID_NAME_RE
 
@@ -208,6 +213,8 @@ def spawn_teammate(
         is_active=False,
     )
 
+    project = project_dir or Path.cwd()
+
     teams.add_member(team_name, member, base_dir)
 
     try:
@@ -221,7 +228,6 @@ def spawn_teammate(
         messaging.append_message(team_name, name, initial_msg, base_dir)
 
         # Generate agent config for OpenCode
-        project = project_dir or Path.cwd()
         config_content = generate_agent_config(
             agent_id=member.agent_id,
             name=name,
@@ -274,9 +280,13 @@ def spawn_teammate(
             member.tmux_pane_id = pane_id
 
     except Exception:
-        # Rollback: remove member from config if spawn fails
+        # Rollback: remove member from config and agent config if spawn fails
         try:
             teams.remove_member(team_name, name, base_dir)
+        except Exception:
+            pass  # Best effort cleanup
+        try:
+            cleanup_agent_config(project, name)
         except Exception:
             pass  # Best effort cleanup
         raise
@@ -378,15 +388,7 @@ def spawn_windows_terminal(
     return proc.pid
 
 
-def cleanup_agent_config(project_dir: Path, name: str) -> None:
-    """Clean up agent config file when agent is killed or removed.
-
-    Args:
-        project_dir: Project root directory containing .opencode/agents/
-        name: Agent name (used to derive config filename)
-    """
-    config_file = project_dir / ".opencode" / "agents" / f"{name}.md"
-    config_file.unlink(missing_ok=True)
+# cleanup_agent_config is re-exported from config_gen for backward compatibility
 
 
 # Agent health detection constants and functions

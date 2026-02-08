@@ -19,6 +19,7 @@ from opencode_teams.spawner import (
     check_pane_alive,
     check_process_alive,
     check_single_agent_health,
+    cleanup_agent_config,
     discover_desktop_binary,
     discover_opencode_binary,
     get_credential_env_var,
@@ -1103,3 +1104,52 @@ class TestDesktopHealthCheck:
         )
         assert result.status == "alive"
         assert result.status != "hung"
+
+
+class TestSpawnRollbackCleansConfig:
+    """Verify that spawn_teammate rollback cleans up agent config on failure."""
+
+    @patch("opencode_teams.spawner.subprocess")
+    def test_rollback_removes_agent_config_on_tmux_failure(
+        self, mock_subprocess: MagicMock, tmp_base_dir: Path, tmp_path: Path,
+    ) -> None:
+        teams.create_team(TEAM, session_id=SESSION_ID, base_dir=tmp_base_dir)
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        # Make tmux spawn fail
+        mock_subprocess.run.side_effect = RuntimeError("tmux crashed")
+
+        with pytest.raises(RuntimeError, match="tmux crashed"):
+            spawn_teammate(
+                TEAM, "fail-agent", "Do work",
+                "/usr/local/bin/opencode",
+                base_dir=tmp_base_dir,
+                project_dir=project_dir,
+            )
+
+        # Agent config should have been cleaned up during rollback
+        config_file = project_dir / ".opencode" / "agents" / "fail-agent.md"
+        assert not config_file.exists()
+
+        # Member should also have been removed from team config
+        config = teams.read_config(TEAM, base_dir=tmp_base_dir)
+        names = [m.name for m in config.members]
+        assert "fail-agent" not in names
+
+
+class TestCleanupAgentConfigReExport:
+    """Verify cleanup_agent_config is importable from spawner (backward compat)."""
+
+    def test_importable_from_spawner(self) -> None:
+        assert callable(cleanup_agent_config)
+
+    def test_removes_file(self, tmp_path: Path) -> None:
+        agents_dir = tmp_path / ".opencode" / "agents"
+        agents_dir.mkdir(parents=True)
+        config_file = agents_dir / "test-agent.md"
+        config_file.write_text("# Test config")
+
+        cleanup_agent_config(tmp_path, "test-agent")
+
+        assert not config_file.exists()

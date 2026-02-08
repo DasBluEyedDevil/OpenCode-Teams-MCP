@@ -42,6 +42,7 @@ def create_team(
     description: str = "",
     lead_model: str = "moonshot-ai/kimi-k2.5",
     base_dir: Path | None = None,
+    project_dir: Path | None = None,
 ) -> TeamCreateResult:
     if not _VALID_NAME_RE.match(name):
         raise ValueError(f"Invalid team name: {name!r}. Use only letters, numbers, hyphens, underscores.")
@@ -76,6 +77,7 @@ def create_team(
         created_at=now_ms,
         lead_agent_id=f"team-lead@{name}",
         lead_session_id=session_id,
+        project_dir=str(project_dir) if project_dir else None,
         members=[lead],
     )
 
@@ -143,9 +145,25 @@ def add_member(name: str, member: TeammateMember, base_dir: Path | None = None) 
     write_config(name, config, base_dir=base_dir)
 
 
+def get_project_dir(team_name: str, base_dir: Path | None = None) -> Path:
+    """Get the project directory for a team, falling back to cwd if not stored."""
+    config = read_config(team_name, base_dir=base_dir)
+    if config.project_dir:
+        return Path(config.project_dir)
+    return Path.cwd()
+
+
 def remove_member(team_name: str, agent_name: str, base_dir: Path | None = None) -> None:
     if agent_name == "team-lead":
         raise ValueError("Cannot remove team-lead from team")
     config = read_config(team_name, base_dir=base_dir)
     config.members = [m for m in config.members if m.name != agent_name]
     write_config(team_name, config, base_dir=base_dir)
+
+    # Best-effort cleanup of agent config file in the target project
+    try:
+        from opencode_teams.config_gen import cleanup_agent_config
+        project = Path(config.project_dir) if config.project_dir else Path.cwd()
+        cleanup_agent_config(project, agent_name)
+    except Exception:
+        pass

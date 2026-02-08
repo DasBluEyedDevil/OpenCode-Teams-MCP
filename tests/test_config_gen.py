@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from opencode_teams.config_gen import (
+    cleanup_agent_config,
     generate_agent_config,
     write_agent_config,
     ensure_opencode_json,
@@ -666,3 +667,25 @@ class TestEnsureOpencodeJson:
 
         # Should preserve existing keys
         assert content["someOtherKey"] == "value"
+
+
+class TestCleanupAgentConfig:
+    """Tests for cleanup_agent_config() - removes .opencode/agents/<name>.md"""
+
+    def test_removes_existing_config_file(self, tmp_path: Path) -> None:
+        agents_dir = tmp_path / ".opencode" / "agents"
+        agents_dir.mkdir(parents=True)
+        config_file = agents_dir / "alice.md"
+        config_file.write_text("# Agent config")
+
+        cleanup_agent_config(tmp_path, "alice")
+
+        assert not config_file.exists()
+
+    def test_noop_when_file_missing(self, tmp_path: Path) -> None:
+        # Should not raise even if file doesn't exist
+        cleanup_agent_config(tmp_path, "nonexistent")
+
+    def test_noop_when_agents_dir_missing(self, tmp_path: Path) -> None:
+        # Should not raise even if .opencode/agents/ doesn't exist
+        cleanup_agent_config(tmp_path, "ghost")

@@ -12,6 +12,7 @@ from opencode_teams.teams import (
     add_member,
     create_team,
     delete_team,
+    get_project_dir,
     read_config,
     remove_member,
     write_config,
@@ -197,3 +198,84 @@ class TestReadConfig:
         lead = cfg.members[0]
         assert isinstance(lead, LeadMember)
         assert lead.agent_id == "team-lead@roundtrip"
+
+
+class TestProjectDir:
+    def test_create_team_stores_project_dir(self, tmp_base_dir: Path, tmp_path: Path) -> None:
+        project = tmp_path / "myproject"
+        project.mkdir()
+        create_team("pd-test", "sess-1", base_dir=tmp_base_dir, project_dir=project)
+        cfg = read_config("pd-test", base_dir=tmp_base_dir)
+        assert cfg.project_dir == str(project)
+
+    def test_create_team_project_dir_defaults_to_none(self, tmp_base_dir: Path) -> None:
+        create_team("pd-none", "sess-1", base_dir=tmp_base_dir)
+        cfg = read_config("pd-none", base_dir=tmp_base_dir)
+        assert cfg.project_dir is None
+
+    def test_project_dir_serialized_as_camel_case(self, tmp_base_dir: Path, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        project.mkdir()
+        create_team("pd-alias", "sess-1", base_dir=tmp_base_dir, project_dir=project)
+
+        import json
+        raw = json.loads((tmp_base_dir / "teams" / "pd-alias" / "config.json").read_text())
+        assert "projectDir" in raw
+        assert raw["projectDir"] == str(project)
+
+    def test_backward_compat_missing_project_dir(self, tmp_base_dir: Path) -> None:
+        """Configs created before project_dir was added should still load."""
+        create_team("old-team", "sess-1", base_dir=tmp_base_dir)
+        # Manually strip projectDir from the JSON to simulate old config
+        import json
+        config_path = tmp_base_dir / "teams" / "old-team" / "config.json"
+        raw = json.loads(config_path.read_text())
+        raw.pop("projectDir", None)
+        config_path.write_text(json.dumps(raw, indent=2))
+
+        cfg = read_config("old-team", base_dir=tmp_base_dir)
+        assert cfg.project_dir is None
+
+
+class TestGetProjectDir:
+    def test_returns_stored_project_dir(self, tmp_base_dir: Path, tmp_path: Path) -> None:
+        project = tmp_path / "stored"
+        project.mkdir()
+        create_team("gp-stored", "sess-1", base_dir=tmp_base_dir, project_dir=project)
+        result = get_project_dir("gp-stored", base_dir=tmp_base_dir)
+        assert result == project
+
+    def test_falls_back_to_cwd_when_none(self, tmp_base_dir: Path) -> None:
+        create_team("gp-cwd", "sess-1", base_dir=tmp_base_dir)
+        result = get_project_dir("gp-cwd", base_dir=tmp_base_dir)
+        assert result == Path.cwd()
+
+
+class TestRemoveMemberCleansUpConfig:
+    def test_remove_member_deletes_agent_config(self, tmp_base_dir: Path, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        project.mkdir()
+        create_team("cleanup-rm", "sess-1", base_dir=tmp_base_dir, project_dir=project)
+
+        # Create a fake agent config file
+        agents_dir = project / ".opencode" / "agents"
+        agents_dir.mkdir(parents=True)
+        config_file = agents_dir / "worker.md"
+        config_file.write_text("# Agent config")
+
+        mate = _make_teammate("worker", "cleanup-rm")
+        add_member("cleanup-rm", mate, base_dir=tmp_base_dir)
+
+        remove_member("cleanup-rm", "worker", base_dir=tmp_base_dir)
+
+        assert not config_file.exists()
+
+    def test_remove_member_succeeds_even_if_no_config_file(self, tmp_base_dir: Path) -> None:
+        create_team("cleanup-nofile", "sess-1", base_dir=tmp_base_dir)
+        mate = _make_teammate("worker", "cleanup-nofile")
+        add_member("cleanup-nofile", mate, base_dir=tmp_base_dir)
+
+        # Should not raise even though there's no .opencode/agents/ directory
+        remove_member("cleanup-nofile", "worker", base_dir=tmp_base_dir)
+        cfg = read_config("cleanup-nofile", base_dir=tmp_base_dir)
+        assert len(cfg.members) == 1

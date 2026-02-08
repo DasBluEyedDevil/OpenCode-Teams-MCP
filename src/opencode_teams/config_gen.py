@@ -165,6 +165,17 @@ def generate_agent_config(
     return config
 
 
+def cleanup_agent_config(project_dir: Path, name: str) -> None:
+    """Clean up agent config file when agent is killed or removed.
+
+    Args:
+        project_dir: Project root directory containing .opencode/agents/
+        name: Agent name (used to derive config filename)
+    """
+    config_file = project_dir / ".opencode" / "agents" / f"{name}.md"
+    config_file.unlink(missing_ok=True)
+
+
 def write_agent_config(
     project_dir: Path,
     name: str,
