@@ -64,6 +64,22 @@ async def client(tmp_path: Path, monkeypatch):
         yield c
 
 
+@pytest.fixture
+async def mcp_dirs(tmp_path: Path, monkeypatch):
+    """Monkeypatched dirs WITHOUT a Client -- tests create Client instances
+    manually (needed for two-client cross-context tests)."""
+    monkeypatch.setattr(teams, "TEAMS_DIR", tmp_path / "teams")
+    monkeypatch.setattr(teams, "TASKS_DIR", tmp_path / "tasks")
+    monkeypatch.setattr(tasks, "TASKS_DIR", tmp_path / "tasks")
+    monkeypatch.setattr(messaging, "TEAMS_DIR", tmp_path / "teams")
+    monkeypatch.setattr(
+        "claude_teams.server.discover_opencode_binary", lambda: "/usr/bin/echo"
+    )
+    (tmp_path / "teams").mkdir()
+    (tmp_path / "tasks").mkdir()
+    return tmp_path
+
+
 # ===========================================================================
 # Class 1: Multi-agent message exchange
 # ===========================================================================
@@ -291,3 +307,103 @@ class TestMultiAgentTaskSharing:
         owners = {t["subject"]: t.get("owner") for t in all_tasks}
         assert owners["task-for-alice"] == "alice"
         assert owners["task-for-bob"] == "bob"
+
+
+# ===========================================================================
+# Class 3: Filesystem state sharing
+# ===========================================================================
+
+class TestFilesystemStateSharing:
+    """Verify JSON files on disk match expected state after MCP operations.
+
+    Confirms MCP-03 at the filesystem level -- the empirical confirmation
+    required by the blockers in STATE.md.
+    """
+
+    async def test_inbox_file_exists_after_send(self, mcp_dirs: Path):
+        """Inbox JSON file on disk contains the expected message."""
+        async with Client(mcp) as c:
+            await c.call_tool("team_create", {"team_name": "t_fs1"})
+            teams.add_member("t_fs1", _make_teammate("alice", "t_fs1"))
+            await c.call_tool("send_message", {
+                "team_name": "t_fs1",
+                "type": "message",
+                "recipient": "alice",
+                "content": "disk check",
+                "summary": "fs-test",
+            })
+
+        # Read raw file from disk
+        inbox_file = mcp_dirs / "teams" / "t_fs1" / "inboxes" / "alice.json"
+        assert inbox_file.exists(), f"Expected inbox file at {inbox_file}"
+        data = json.loads(inbox_file.read_text())
+        assert len(data) == 1
+        assert data[0]["from"] == "team-lead"
+        assert data[0]["text"] == "disk check"
+
+    async def test_task_file_exists_after_create(self, mcp_dirs: Path):
+        """Task JSON file on disk has the expected fields."""
+        async with Client(mcp) as c:
+            await c.call_tool("team_create", {"team_name": "t_fs2"})
+            created = _data(await c.call_tool("task_create", {
+                "team_name": "t_fs2",
+                "subject": "fs-task",
+                "description": "check disk",
+            }))
+
+        task_file = mcp_dirs / "tasks" / "t_fs2" / f"{created['id']}.json"
+        assert task_file.exists(), f"Expected task file at {task_file}"
+        data = json.loads(task_file.read_text())
+        assert data["subject"] == "fs-task"
+        assert data["description"] == "check disk"
+        assert data["status"] == "pending"
+
+    async def test_cross_context_state_visible(self, mcp_dirs: Path):
+        """State written by one Client session is readable by another.
+
+        This is the critical multi-process simulation: two separate
+        ``Client(mcp)`` sessions sharing the same monkeypatched filesystem
+        dirs.  Client 1 creates a team and sends a message; Client 2 (a
+        fresh session) reads bob's inbox and receives that message.
+        """
+        async with Client(mcp) as client1:
+            await client1.call_tool("team_create", {"team_name": "cross"})
+            teams.add_member("cross", _make_teammate("alice", "cross"))
+            teams.add_member("cross", _make_teammate("bob", "cross"))
+            await client1.call_tool("send_message", {
+                "team_name": "cross",
+                "type": "message",
+                "recipient": "bob",
+                "content": "cross-context test",
+                "summary": "xctx",
+            })
+
+        # New client session -- simulates separate MCP server process
+        async with Client(mcp) as client2:
+            inbox = _data(await client2.call_tool(
+                "read_inbox", {"team_name": "cross", "agent_name": "bob"},
+            ))
+            assert len(inbox) == 1
+            assert inbox[0]["text"] == "cross-context test"
+            assert inbox[0]["from"] == "team-lead"
+
+    async def test_task_file_reflects_owner_after_update(self, mcp_dirs: Path):
+        """Owner update via MCP tool persists to the task JSON file."""
+        async with Client(mcp) as c:
+            await c.call_tool("team_create", {"team_name": "t_fs4"})
+            teams.add_member("t_fs4", _make_teammate("alice", "t_fs4"))
+            created = _data(await c.call_tool("task_create", {
+                "team_name": "t_fs4",
+                "subject": "own-test",
+                "description": "owner check",
+            }))
+            await c.call_tool("task_update", {
+                "team_name": "t_fs4",
+                "task_id": created["id"],
+                "owner": "alice",
+            })
+
+        task_file = mcp_dirs / "tasks" / "t_fs4" / f"{created['id']}.json"
+        assert task_file.exists()
+        data = json.loads(task_file.read_text())
+        assert data["owner"] == "alice"
