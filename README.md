@@ -2,7 +2,7 @@
 
 # claude-teams
 
-MCP server that implements Claude Code's [agent teams](https://code.claude.com/docs/en/agent-teams) protocol.
+MCP server for orchestrating OpenCode agent teams with shared task lists and messaging.
 
 </div>
 
@@ -14,11 +14,9 @@ https://github.com/user-attachments/assets/531ada0a-6c36-45cd-8144-a092bb9f9a19
 
 ## About
 
-Claude Code has a built-in agent teams feature that lets multiple Claude Code instances coordinate as a team -- shared task lists, inter-agent messaging, and tmux-based spawning. But the protocol is internal, tightly coupled to Claude Code's own tooling.
+This MCP server implements a multi-agent coordination protocol for [OpenCode](https://opencode.ai) + Kimi K2.5. Multiple OpenCode instances coordinate as a team with shared task lists, inter-agent messaging, and tmux-based or desktop app spawning.
 
-This MCP server reimplements that protocol as a standalone [MCP](https://modelcontextprotocol.io/) server, making it available to any MCP client: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenCode](https://opencode.ai), or anything else that speaks MCP.
-
-The implementation is based on a [deep dive into Claude Code's internals](https://gist.github.com/cs50victor/0a7081e6824c135b4bdc28b566e1c719) and experimentation with the feature. It may not perfectly match every aspect of Claude Code's native implementation. PRs are welcome.
+The protocol is exposed as a standalone [MCP](https://modelcontextprotocol.io/) server, making it available to any MCP client that speaks MCP. Originally inspired by [Claude Code's agent teams internals](https://gist.github.com/cs50victor/0a7081e6824c135b4bdc28b566e1c719), the implementation has been adapted for the OpenCode + Kimi K2.5 stack. PRs are welcome.
 
 ## Install
 
@@ -53,7 +51,7 @@ Or add to `~/.config/opencode/opencode.json` (OpenCode):
 
 - Python 3.12+
 - [tmux](https://github.com/tmux/tmux)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI on PATH
+- [OpenCode](https://opencode.ai) CLI on PATH (v1.1.52+) or OpenCode Desktop app
 
 ## Tools
 
@@ -75,7 +73,7 @@ Or add to `~/.config/opencode/opencode.json` (OpenCode):
 
 ## How it works
 
-- **Spawning**: Teammates launch as separate Claude Code processes in tmux panes via `tmux split-window`. Each gets a unique agent ID (`name@team`) and color.
+- **Spawning**: Teammates launch as separate OpenCode processes in tmux panes or as desktop app instances. Each gets a unique agent ID (`name@team`) and color.
 - **Messaging**: JSON-based inboxes under `~/.claude/teams/<team>/inboxes/`. File locking (`fcntl`) prevents corruption from concurrent reads/writes.
 - **Tasks**: JSON task files under `~/.claude/tasks/<team>/`. Tasks have status tracking, ownership, and dependency management (`blocks`/`blockedBy`).
 - **Concurrency safety**: Atomic writes via `tempfile` + `os.replace` for config. `fcntl` file locks for inbox operations.

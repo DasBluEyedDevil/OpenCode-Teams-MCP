@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "claude-teams"
 version = "0.1.0"
-description = "MCP server for orchestrating Claude Code agent teams"
+description = "MCP server for orchestrating OpenCode agent teams with Kimi K2.5"
 requires-python = ">=3.12"
 license = "MIT"
 dependencies = [
