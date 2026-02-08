@@ -24,6 +24,7 @@ from opencode_teams.spawner import (
     cleanup_agent_config,
     discover_desktop_binary,
     discover_opencode_binary,
+    is_tmux_available,
     kill_desktop_process,
     kill_tmux_pane,
     launch_desktop_app,
@@ -109,10 +110,12 @@ def spawn_teammate_tool(
     template: str = "",  # "researcher", "implementer", "reviewer", "tester", or "" for generic
     custom_instructions: str = "",  # Additional system prompt instructions to customize the agent
     plan_mode_required: bool = False,
-    backend: str = "tmux",  # "tmux" or "desktop"
+    backend: str = "auto",  # "auto", "tmux", or "desktop"
 ) -> dict:
-    """Spawn a new OpenCode teammate. By default spawns in a tmux pane (CLI).
-    Set backend='desktop' to launch the OpenCode desktop app instead.
+    """Spawn a new OpenCode teammate. Backend options:
+    - 'auto' (default): Uses tmux if available, otherwise desktop app
+    - 'tmux': Spawn in a tmux pane (requires tmux installed)
+    - 'desktop': Launch the OpenCode desktop app
     The teammate receives its initial prompt via inbox and begins working
     autonomously. Names must be unique within the team. Use template to assign
     a role (researcher, implementer, reviewer, tester). Use list_agent_templates
@@ -136,9 +139,24 @@ def spawn_teammate_tool(
             raise ToolError(f"Unknown template: {template!r}. Available: {available}")
         role_instructions = tmpl.role_instructions
 
+    # Resolve backend: auto-detect best option
+    effective_backend = backend
+    if backend == "auto":
+        if is_tmux_available():
+            effective_backend = "tmux"
+        else:
+            effective_backend = "desktop"
+
+    # Validate tmux availability before attempting spawn
+    if effective_backend == "tmux" and not is_tmux_available():
+        raise ToolError(
+            "tmux is not available on this system. "
+            "Either install tmux, or use backend='desktop' to spawn via the OpenCode desktop app."
+        )
+
     # Desktop binary discovery
     desktop_binary = None
-    if backend == "desktop":
+    if effective_backend == "desktop":
         try:
             desktop_binary = discover_desktop_binary()
         except FileNotFoundError as e:
@@ -153,7 +171,7 @@ def spawn_teammate_tool(
         subagent_type=template or "general-purpose",
         role_instructions=role_instructions,
         custom_instructions=custom_instructions,
-        backend_type=backend,
+        backend_type=effective_backend,
         desktop_binary=desktop_binary,
         plan_mode_required=plan_mode_required,
         project_dir=Path.cwd(),

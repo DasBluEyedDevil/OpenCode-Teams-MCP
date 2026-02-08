@@ -546,7 +546,8 @@ class TestModelTranslationWiring:
         await client.call_tool("team_create", {"team_name": "tm1"})
         # Mock spawn_teammate to capture the model argument without actually spawning
         import unittest.mock
-        with unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
+        with unittest.mock.patch("opencode_teams.server.is_tmux_available", return_value=True), \
+             unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
             mock_spawn.return_value = TeammateMember(
                 agent_id="worker@tm1", name="worker", agent_type="general-purpose",
                 model="moonshot-ai/kimi-k2.5", prompt="do work", color="blue",
@@ -566,7 +567,8 @@ class TestModelTranslationWiring:
         """Verify that a direct provider/model string passes through unchanged."""
         await client.call_tool("team_create", {"team_name": "tm2"})
         import unittest.mock
-        with unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
+        with unittest.mock.patch("opencode_teams.server.is_tmux_available", return_value=True), \
+             unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
             mock_spawn.return_value = TeammateMember(
                 agent_id="worker@tm2", name="worker", agent_type="general-purpose",
                 model="openrouter/moonshotai/kimi-k2.5", prompt="do work", color="blue",
@@ -602,7 +604,8 @@ class TestListAgentTemplates:
 class TestSpawnWithTemplateTool:
     async def test_spawn_with_researcher_template(self, client: Client):
         await client.call_tool("team_create", {"team_name": "tpl1"})
-        with unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
+        with unittest.mock.patch("opencode_teams.server.is_tmux_available", return_value=True), \
+             unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
             mock_spawn.return_value = TeammateMember(
                 agent_id="worker@tpl1", name="worker", agent_type="researcher",
                 model="moonshot-ai/kimi-k2.5", prompt="do research", color="blue",
@@ -618,7 +621,8 @@ class TestSpawnWithTemplateTool:
 
     async def test_spawn_with_custom_instructions(self, client: Client):
         await client.call_tool("team_create", {"team_name": "tpl2"})
-        with unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
+        with unittest.mock.patch("opencode_teams.server.is_tmux_available", return_value=True), \
+             unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
             mock_spawn.return_value = TeammateMember(
                 agent_id="worker@tpl2", name="worker", agent_type="general-purpose",
                 model="moonshot-ai/kimi-k2.5", prompt="do work", color="blue",
@@ -633,7 +637,8 @@ class TestSpawnWithTemplateTool:
 
     async def test_spawn_with_template_and_custom_instructions(self, client: Client):
         await client.call_tool("team_create", {"team_name": "tpl3"})
-        with unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
+        with unittest.mock.patch("opencode_teams.server.is_tmux_available", return_value=True), \
+             unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
             mock_spawn.return_value = TeammateMember(
                 agent_id="worker@tpl3", name="worker", agent_type="tester",
                 model="moonshot-ai/kimi-k2.5", prompt="test stuff", color="blue",
@@ -665,7 +670,8 @@ class TestSpawnWithTemplateTool:
 
     async def test_spawn_without_template_uses_general_purpose(self, client: Client):
         await client.call_tool("team_create", {"team_name": "tpl5"})
-        with unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
+        with unittest.mock.patch("opencode_teams.server.is_tmux_available", return_value=True), \
+             unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
             mock_spawn.return_value = TeammateMember(
                 agent_id="worker@tpl5", name="worker", agent_type="general-purpose",
                 model="moonshot-ai/kimi-k2.5", prompt="do work", color="blue",
@@ -680,7 +686,8 @@ class TestSpawnWithTemplateTool:
 
     async def test_spawn_template_sets_subagent_type(self, client: Client):
         await client.call_tool("team_create", {"team_name": "tpl6"})
-        with unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
+        with unittest.mock.patch("opencode_teams.server.is_tmux_available", return_value=True), \
+             unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
             mock_spawn.return_value = TeammateMember(
                 agent_id="worker@tpl6", name="worker", agent_type="tester",
                 model="moonshot-ai/kimi-k2.5", prompt="test", color="blue",
@@ -1034,8 +1041,10 @@ class TestSpawnDesktopBackendTool:
             assert call_kwargs["desktop_binary"] == "/fake/desktop"
 
     async def test_spawn_with_tmux_backend_default(self, client: Client):
+        """When tmux is available, auto backend resolves to tmux."""
         await client.call_tool("team_create", {"team_name": "td2"})
-        with unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
+        with unittest.mock.patch("opencode_teams.server.is_tmux_available", return_value=True), \
+             unittest.mock.patch("opencode_teams.server.spawn_teammate") as mock_spawn:
             mock_spawn.return_value = TeammateMember(
                 agent_id="worker@td2", name="worker", agent_type="general-purpose",
                 model="moonshot-ai/kimi-k2.5", prompt="do work", color="blue",

@@ -18,6 +18,15 @@ from opencode_teams.models import AgentHealthStatus, COLOR_PALETTE, InboxMessage
 from opencode_teams.teams import _VALID_NAME_RE
 
 
+def is_tmux_available() -> bool:
+    """Check if tmux is available on the system.
+
+    Returns:
+        True if tmux is installed and executable, False otherwise.
+    """
+    return shutil.which("tmux") is not None
+
+
 # OpenCode binary discovery and configuration constants
 MINIMUM_OPENCODE_VERSION = (1, 1, 52)
 DEFAULT_PROVIDER = "moonshot-ai"
