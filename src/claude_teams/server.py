@@ -10,6 +10,7 @@ from fastmcp.server.lifespan import lifespan
 
 from claude_teams import messaging, tasks, teams
 from claude_teams.models import (
+    AgentHealthStatus,
     COLOR_PALETTE,
     InboxMessage,
     SendMessageResult,
@@ -17,7 +18,16 @@ from claude_teams.models import (
     SpawnResult,
     TeammateMember,
 )
-from claude_teams.spawner import cleanup_agent_config, discover_opencode_binary, kill_tmux_pane, spawn_teammate, translate_model
+from claude_teams.spawner import (
+    check_single_agent_health,
+    cleanup_agent_config,
+    discover_opencode_binary,
+    kill_tmux_pane,
+    load_health_state,
+    save_health_state,
+    spawn_teammate,
+    translate_model,
+)
 
 
 @lifespan
@@ -389,6 +399,97 @@ def process_shutdown_approved(team_name: str, agent_name: str) -> dict:
     tasks.reset_owner_tasks(team_name, agent_name)
     cleanup_agent_config(Path.cwd(), agent_name)
     return {"success": True, "message": f"{agent_name} removed from team."}
+
+
+@mcp.tool
+def check_agent_health(
+    team_name: str,
+    agent_name: str,
+) -> dict:
+    """Check health status of a specific agent. Returns status: 'alive', 'dead',
+    'hung', or 'unknown'. Dead means the tmux pane no longer exists. Hung means
+    the pane is alive but has produced no new output for over 120 seconds.
+    Use force_kill_teammate to kill dead or hung agents."""
+    config = teams.read_config(team_name)
+    member = None
+    for m in config.members:
+        if isinstance(m, TeammateMember) and m.name == agent_name:
+            member = m
+            break
+    if member is None:
+        raise ToolError(f"Agent {agent_name!r} not found in team {team_name!r}")
+
+    # Load previous health state for hung detection
+    health_state = load_health_state(team_name)
+    agent_state = health_state.get(agent_name, {})
+    previous_hash = agent_state.get("hash")
+    last_change_time = agent_state.get("last_change_time")
+
+    result = check_single_agent_health(
+        member,
+        previous_hash=previous_hash,
+        last_change_time=last_change_time,
+    )
+
+    # Update health state
+    if result.last_content_hash is not None:
+        if result.last_content_hash != previous_hash:
+            health_state[agent_name] = {
+                "hash": result.last_content_hash,
+                "last_change_time": time.time(),
+            }
+        elif agent_name not in health_state:
+            health_state[agent_name] = {
+                "hash": result.last_content_hash,
+                "last_change_time": time.time(),
+            }
+    save_health_state(team_name, health_state)
+
+    return result.model_dump(by_alias=True, exclude_none=True)
+
+
+@mcp.tool
+def check_all_agents_health(
+    team_name: str,
+) -> list[dict]:
+    """Check health of all teammates in the team. Returns a list of health
+    status objects. Each includes agentName, paneId, status, and detail.
+    Useful for monitoring team health. Automatically persists health state
+    for hung detection across calls."""
+    config = teams.read_config(team_name)
+    health_state = load_health_state(team_name)
+    results = []
+
+    for m in config.members:
+        if not isinstance(m, TeammateMember):
+            continue
+        agent_state = health_state.get(m.name, {})
+        previous_hash = agent_state.get("hash")
+        last_change_time = agent_state.get("last_change_time")
+
+        status = check_single_agent_health(
+            m,
+            previous_hash=previous_hash,
+            last_change_time=last_change_time,
+        )
+
+        # Update health state for this agent
+        if status.last_content_hash is not None:
+            if status.last_content_hash != previous_hash:
+                health_state[m.name] = {
+                    "hash": status.last_content_hash,
+                    "last_change_time": time.time(),
+                }
+            elif m.name not in health_state:
+                health_state[m.name] = {
+                    "hash": status.last_content_hash,
+                    "last_change_time": time.time(),
+                }
+
+        results.append(status.model_dump(by_alias=True, exclude_none=True))
+
+    save_health_state(team_name, health_state)
+    return results
 
 
 def main():
