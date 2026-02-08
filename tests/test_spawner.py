@@ -1,25 +1,33 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
 
 from claude_teams import teams, messaging
-from claude_teams.models import COLOR_PALETTE, TeammateMember
+from claude_teams.models import AgentHealthStatus, COLOR_PALETTE, TeammateMember
 from claude_teams.spawner import (
     assign_color,
     build_opencode_run_command,
     build_spawn_command,
+    capture_pane_content_hash,
+    check_pane_alive,
+    check_single_agent_health,
     discover_claude_binary,
     discover_opencode_binary,
     get_credential_env_var,
     get_provider_config,
     kill_tmux_pane,
+    load_health_state,
+    save_health_state,
     spawn_teammate,
     translate_model,
     validate_opencode_version,
+    DEFAULT_GRACE_PERIOD_SECONDS,
+    DEFAULT_HUNG_TIMEOUT_SECONDS,
     MINIMUM_OPENCODE_VERSION,
     MODEL_ALIASES,
     PROVIDER_CONFIGS,
@@ -577,3 +585,202 @@ class TestConfigGenIntegration:
         cleanup_agent_config(tmp_path, "nonexistent")
 
         # No assertion needed - test passes if no exception raised
+
+
+# Agent health detection tests
+
+
+class TestCheckPaneAlive:
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_returns_true_for_alive_pane(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.stdout = "0\n"
+        mock_run.return_value.returncode = 0
+        assert check_pane_alive("%42") is True
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_returns_false_for_dead_pane(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.stdout = "1\n"
+        mock_run.return_value.returncode = 0
+        assert check_pane_alive("%42") is False
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_returns_false_for_missing_pane(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = ""
+        assert check_pane_alive("%42") is False
+
+    def test_returns_false_for_empty_pane_id(self) -> None:
+        # No subprocess call should be made
+        assert check_pane_alive("") is False
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_returns_false_on_timeout(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="tmux", timeout=5)
+        assert check_pane_alive("%42") is False
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_returns_false_when_tmux_not_installed(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = FileNotFoundError
+        assert check_pane_alive("%42") is False
+
+
+class TestCapturePaneContentHash:
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_returns_hash_for_live_pane(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.stdout = "some output\n"
+        mock_run.return_value.returncode = 0
+        result = capture_pane_content_hash("%42")
+        assert result is not None
+        assert len(result) == 64  # SHA-256 hex digest length
+        assert all(c in "0123456789abcdef" for c in result)
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_returns_none_for_failed_capture(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = ""
+        assert capture_pane_content_hash("%42") is None
+
+    def test_returns_none_for_empty_pane_id(self) -> None:
+        assert capture_pane_content_hash("") is None
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_returns_none_on_timeout(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="tmux", timeout=5)
+        assert capture_pane_content_hash("%42") is None
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_same_content_produces_same_hash(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.stdout = "deterministic content"
+        mock_run.return_value.returncode = 0
+        hash1 = capture_pane_content_hash("%42")
+        hash2 = capture_pane_content_hash("%42")
+        assert hash1 == hash2
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_different_content_produces_different_hash(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "content A"
+        hash_a = capture_pane_content_hash("%42")
+        mock_run.return_value.stdout = "content B"
+        hash_b = capture_pane_content_hash("%42")
+        assert hash_a != hash_b
+
+
+class TestCheckSingleAgentHealth:
+    @patch("claude_teams.spawner.capture_pane_content_hash")
+    @patch("claude_teams.spawner.check_pane_alive")
+    def test_dead_when_pane_missing(
+        self, mock_alive: MagicMock, mock_hash: MagicMock
+    ) -> None:
+        mock_alive.return_value = False
+        member = _make_opencode_member(name="worker", prompt="Do work")
+        member.joined_at = int(time.time() * 1000) - 120_000
+        member.tmux_pane_id = "%42"
+        result = check_single_agent_health(member, None, None)
+        assert result.status == "dead"
+        assert result.agent_name == "worker"
+        assert result.pane_id == "%42"
+
+    @patch("claude_teams.spawner.capture_pane_content_hash")
+    @patch("claude_teams.spawner.check_pane_alive")
+    def test_alive_when_pane_exists_and_content_changes(
+        self, mock_alive: MagicMock, mock_hash: MagicMock
+    ) -> None:
+        mock_alive.return_value = True
+        mock_hash.return_value = "newhash"
+        member = _make_opencode_member(name="worker", prompt="Do work")
+        member.joined_at = int(time.time() * 1000) - 120_000
+        member.tmux_pane_id = "%42"
+        result = check_single_agent_health(member, "oldhash", time.time() - 10)
+        assert result.status == "alive"
+        assert result.last_content_hash == "newhash"
+
+    @patch("claude_teams.spawner.capture_pane_content_hash")
+    @patch("claude_teams.spawner.check_pane_alive")
+    def test_hung_when_content_unchanged_beyond_timeout(
+        self, mock_alive: MagicMock, mock_hash: MagicMock
+    ) -> None:
+        mock_alive.return_value = True
+        mock_hash.return_value = "samehash"
+        member = _make_opencode_member(name="worker", prompt="Do work")
+        member.joined_at = int(time.time() * 1000) - 120_000
+        member.tmux_pane_id = "%42"
+        result = check_single_agent_health(
+            member, "samehash", time.time() - 130
+        )
+        assert result.status == "hung"
+
+    @patch("claude_teams.spawner.capture_pane_content_hash")
+    @patch("claude_teams.spawner.check_pane_alive")
+    def test_alive_during_grace_period(
+        self, mock_alive: MagicMock, mock_hash: MagicMock
+    ) -> None:
+        mock_alive.return_value = True
+        mock_hash.return_value = "samehash"
+        # 5 seconds ago -- well within default 60s grace period
+        member = _make_opencode_member(name="worker", prompt="Do work")
+        member.joined_at = int(time.time() * 1000) - 5_000
+        member.tmux_pane_id = "%42"
+        result = check_single_agent_health(
+            member, "samehash", time.time() - 130
+        )
+        assert result.status == "alive"
+        assert "grace" in result.detail.lower()
+
+    @patch("claude_teams.spawner.capture_pane_content_hash")
+    @patch("claude_teams.spawner.check_pane_alive")
+    def test_unknown_when_capture_fails(
+        self, mock_alive: MagicMock, mock_hash: MagicMock
+    ) -> None:
+        mock_alive.return_value = True
+        mock_hash.return_value = None
+        member = _make_opencode_member(name="worker", prompt="Do work")
+        member.joined_at = int(time.time() * 1000) - 120_000
+        member.tmux_pane_id = "%42"
+        result = check_single_agent_health(member, None, None)
+        assert result.status == "unknown"
+
+    @patch("claude_teams.spawner.capture_pane_content_hash")
+    @patch("claude_teams.spawner.check_pane_alive")
+    def test_alive_when_content_unchanged_within_timeout(
+        self, mock_alive: MagicMock, mock_hash: MagicMock
+    ) -> None:
+        mock_alive.return_value = True
+        mock_hash.return_value = "samehash"
+        member = _make_opencode_member(name="worker", prompt="Do work")
+        member.joined_at = int(time.time() * 1000) - 120_000
+        member.tmux_pane_id = "%42"
+        # Only 30s elapsed -- below 120s threshold
+        result = check_single_agent_health(
+            member, "samehash", time.time() - 30
+        )
+        assert result.status == "alive"
+
+
+class TestHealthStatePersistence:
+    def test_load_empty_state_when_no_file(self, team_dir: Path) -> None:
+        result = load_health_state(TEAM, base_dir=team_dir)
+        assert result == {}
+
+    def test_save_and_load_round_trip(self, team_dir: Path) -> None:
+        state = {
+            "worker": {
+                "hash": "abc123",
+                "last_change_time": 1700000000.0,
+            }
+        }
+        save_health_state(TEAM, state, base_dir=team_dir)
+        loaded = load_health_state(TEAM, base_dir=team_dir)
+        assert loaded["worker"]["hash"] == "abc123"
+        assert loaded["worker"]["last_change_time"] == 1700000000.0
+
+    def test_save_overwrites_previous(self, team_dir: Path) -> None:
+        state1 = {"worker": {"hash": "old", "last_change_time": 1.0}}
+        save_health_state(TEAM, state1, base_dir=team_dir)
+
+        state2 = {"worker": {"hash": "new", "last_change_time": 2.0}}
+        save_health_state(TEAM, state2, base_dir=team_dir)
+
+        loaded = load_health_state(TEAM, base_dir=team_dir)
+        assert loaded["worker"]["hash"] == "new"
+        assert loaded["worker"]["last_change_time"] == 2.0
