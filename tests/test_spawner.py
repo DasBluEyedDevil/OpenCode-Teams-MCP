@@ -294,6 +294,125 @@ class TestSpawnTeammate:
         assert "CLAUDECODE" not in tmux_cmd
 
 
+class TestSpawnWithTemplate:
+    """Tests for template wiring in spawn flow (role_instructions, custom_instructions)."""
+
+    @patch("claude_teams.spawner.subprocess")
+    def test_spawn_passes_role_instructions_to_config_gen(
+        self, mock_subprocess: MagicMock, tmp_claude_dir: Path, tmp_path: Path
+    ) -> None:
+        mock_subprocess.run.return_value.stdout = "%42\n"
+        teams.create_team(TEAM, session_id=SESSION_ID, base_dir=tmp_claude_dir)
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        spawn_teammate(
+            TEAM,
+            "researcher",
+            "Do research",
+            "/usr/local/bin/opencode",
+            SESSION_ID,
+            base_dir=tmp_claude_dir,
+            project_dir=project_dir,
+            model="moonshot-ai/kimi-k2.5",
+            role_instructions="# Role: Tester\n\nTest stuff.",
+        )
+
+        config_file = project_dir / ".opencode" / "agents" / "researcher.md"
+        assert config_file.exists()
+        content = config_file.read_text()
+        assert "# Role: Tester" in content
+
+    @patch("claude_teams.spawner.subprocess")
+    def test_spawn_passes_custom_instructions_to_config_gen(
+        self, mock_subprocess: MagicMock, tmp_claude_dir: Path, tmp_path: Path
+    ) -> None:
+        mock_subprocess.run.return_value.stdout = "%42\n"
+        teams.create_team(TEAM, session_id=SESSION_ID, base_dir=tmp_claude_dir)
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        spawn_teammate(
+            TEAM,
+            "worker",
+            "Do work",
+            "/usr/local/bin/opencode",
+            SESSION_ID,
+            base_dir=tmp_claude_dir,
+            project_dir=project_dir,
+            model="moonshot-ai/kimi-k2.5",
+            custom_instructions="Focus on edge cases.",
+        )
+
+        config_file = project_dir / ".opencode" / "agents" / "worker.md"
+        assert config_file.exists()
+        content = config_file.read_text()
+        assert "Focus on edge cases." in content
+
+    @patch("claude_teams.spawner.subprocess")
+    def test_spawn_without_template_produces_clean_config(
+        self, mock_subprocess: MagicMock, tmp_claude_dir: Path, tmp_path: Path
+    ) -> None:
+        mock_subprocess.run.return_value.stdout = "%42\n"
+        teams.create_team(TEAM, session_id=SESSION_ID, base_dir=tmp_claude_dir)
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        spawn_teammate(
+            TEAM,
+            "generic",
+            "Do generic work",
+            "/usr/local/bin/opencode",
+            SESSION_ID,
+            base_dir=tmp_claude_dir,
+            project_dir=project_dir,
+            model="moonshot-ai/kimi-k2.5",
+        )
+
+        config_file = project_dir / ".opencode" / "agents" / "generic.md"
+        assert config_file.exists()
+        content = config_file.read_text()
+        assert "# Role:" not in content
+        assert "# Additional Instructions" not in content
+
+    @patch("claude_teams.spawner.subprocess")
+    def test_spawn_with_both_role_and_custom_instructions(
+        self, mock_subprocess: MagicMock, tmp_claude_dir: Path, tmp_path: Path
+    ) -> None:
+        mock_subprocess.run.return_value.stdout = "%42\n"
+        teams.create_team(TEAM, session_id=SESSION_ID, base_dir=tmp_claude_dir)
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        spawn_teammate(
+            TEAM,
+            "hybrid",
+            "Do hybrid work",
+            "/usr/local/bin/opencode",
+            SESSION_ID,
+            base_dir=tmp_claude_dir,
+            project_dir=project_dir,
+            model="moonshot-ai/kimi-k2.5",
+            role_instructions="# Role: Tester\n\nTest everything.",
+            custom_instructions="Focus on performance tests.",
+        )
+
+        config_file = project_dir / ".opencode" / "agents" / "hybrid.md"
+        assert config_file.exists()
+        content = config_file.read_text()
+        assert "# Role: Tester" in content
+        assert "Focus on performance tests." in content
+        # Role instructions should appear before custom instructions
+        role_pos = content.index("# Role: Tester")
+        custom_pos = content.index("# Additional Instructions")
+        comm_pos = content.index("# Communication Protocol")
+        assert role_pos < custom_pos < comm_pos
+
+
 class TestKillTmuxPane:
     @patch("claude_teams.spawner.subprocess")
     def test_calls_subprocess(self, mock_subprocess: MagicMock) -> None:

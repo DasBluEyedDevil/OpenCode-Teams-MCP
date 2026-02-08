@@ -166,6 +166,8 @@ def spawn_teammate(
     *,
     model: str = "sonnet",
     subagent_type: str = "general-purpose",
+    role_instructions: str = "",
+    custom_instructions: str = "",
     cwd: str | None = None,
     plan_mode_required: bool = False,
     base_dir: Path | None = None,
@@ -215,6 +217,8 @@ def spawn_teammate(
         team_name=team_name,
         color=color,
         model=model,
+        role_instructions=role_instructions,
+        custom_instructions=custom_instructions,
     )
     write_agent_config(project, name, config_content)
     ensure_opencode_json(project, mcp_server_command="uv run claude-teams")
