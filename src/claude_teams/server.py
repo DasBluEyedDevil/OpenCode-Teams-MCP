@@ -19,10 +19,14 @@ from claude_teams.models import (
     TeammateMember,
 )
 from claude_teams.spawner import (
+    check_process_alive,
     check_single_agent_health,
     cleanup_agent_config,
+    discover_desktop_binary,
     discover_opencode_binary,
+    kill_desktop_process,
     kill_tmux_pane,
+    launch_desktop_app,
     load_health_state,
     save_health_state,
     spawn_teammate,
@@ -91,13 +95,13 @@ def spawn_teammate_tool(
     template: str = "",  # "researcher", "implementer", "reviewer", "tester", or "" for generic
     custom_instructions: str = "",  # Additional system prompt instructions to customize the agent
     plan_mode_required: bool = False,
+    backend: str = "tmux",  # "tmux" or "desktop"
 ) -> dict:
-    """Spawn a new OpenCode teammate in a tmux pane. The teammate receives
-    its initial prompt via inbox and begins working autonomously. Names must
-    be unique within the team. Use template parameter to assign a role
-    (researcher, implementer, reviewer, tester) with role-specific system
-    prompt instructions. Use custom_instructions to add additional system prompt
-    text that customizes the agent beyond the template. Use list_agent_templates
+    """Spawn a new OpenCode teammate. By default spawns in a tmux pane (CLI).
+    Set backend='desktop' to launch the OpenCode desktop app instead.
+    The teammate receives its initial prompt via inbox and begins working
+    autonomously. Names must be unique within the team. Use template to assign
+    a role (researcher, implementer, reviewer, tester). Use list_agent_templates
     to see available templates."""
     ls = _get_lifespan(ctx)
     resolved_model = translate_model(model, provider=ls.get("provider", "moonshot-ai"))
@@ -111,6 +115,14 @@ def spawn_teammate_tool(
             raise ToolError(f"Unknown template: {template!r}. Available: {available}")
         role_instructions = tmpl.role_instructions
 
+    # Desktop binary discovery
+    desktop_binary = None
+    if backend == "desktop":
+        try:
+            desktop_binary = discover_desktop_binary()
+        except FileNotFoundError as e:
+            raise ToolError(str(e))
+
     member = spawn_teammate(
         team_name=team_name,
         name=name,
@@ -121,6 +133,8 @@ def spawn_teammate_tool(
         subagent_type=template or "general-purpose",
         role_instructions=role_instructions,
         custom_instructions=custom_instructions,
+        backend_type=backend,
+        desktop_binary=desktop_binary,
         plan_mode_required=plan_mode_required,
         project_dir=Path.cwd(),
     )
@@ -375,19 +389,25 @@ def read_config(team_name: str) -> dict:
 
 @mcp.tool
 def force_kill_teammate(team_name: str, agent_name: str) -> dict:
-    """Forcibly kill a teammate's tmux pane. Use when graceful shutdown via
-    send_message(type='shutdown_request') is not possible or not responding.
-    Kills the tmux pane, removes member from config, and resets their tasks."""
+    """Forcibly kill a teammate. For tmux backend, kills the tmux pane.
+    For desktop backend, terminates the desktop process. Removes member
+    from config and resets their tasks."""
     config = teams.read_config(team_name)
-    pane_id = None
+    member = None
     for m in config.members:
         if isinstance(m, TeammateMember) and m.name == agent_name:
-            pane_id = m.tmux_pane_id
+            member = m
             break
-    if pane_id is None:
+    if member is None:
         raise ToolError(f"Teammate {agent_name!r} not found in team {team_name!r}")
-    if pane_id:
-        kill_tmux_pane(pane_id)
+
+    if member.backend_type == "desktop":
+        if member.process_id:
+            kill_desktop_process(member.process_id)
+    else:
+        if member.tmux_pane_id:
+            kill_tmux_pane(member.tmux_pane_id)
+
     teams.remove_member(team_name, agent_name)
     tasks.reset_owner_tasks(team_name, agent_name)
     cleanup_agent_config(Path.cwd(), agent_name)

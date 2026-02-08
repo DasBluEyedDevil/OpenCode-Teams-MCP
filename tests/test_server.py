@@ -703,7 +703,8 @@ class TestConfigCleanup:
         teams.add_member("tk1", _make_teammate("worker", "tk1", pane_id="%99"))
 
         import unittest.mock
-        with unittest.mock.patch("claude_teams.server.cleanup_agent_config") as mock_cleanup:
+        with unittest.mock.patch("claude_teams.server.cleanup_agent_config") as mock_cleanup, \
+             unittest.mock.patch("claude_teams.server.kill_tmux_pane"):
             await client.call_tool(
                 "force_kill_teammate",
                 {"team_name": "tk1", "agent_name": "worker"},
@@ -1011,3 +1012,93 @@ class TestCheckAllAgentsHealth:
         # Both agents should have previous hashes from first call
         for arg in captured_args:
             assert arg["previous_hash"] is not None, f"No previous hash for {arg['name']}"
+
+
+class TestSpawnDesktopBackendTool:
+    async def test_spawn_with_desktop_backend(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "td1"})
+        with unittest.mock.patch("claude_teams.server.spawn_teammate") as mock_spawn, \
+             unittest.mock.patch("claude_teams.server.discover_desktop_binary", return_value="/fake/desktop"):
+            mock_spawn.return_value = TeammateMember(
+                agent_id="worker@td1", name="worker", agent_type="general-purpose",
+                model="moonshot-ai/kimi-k2.5", prompt="do work", color="blue",
+                joined_at=0, tmux_pane_id="", cwd="/tmp",
+                backend_type="desktop", process_id=9999,
+            )
+            await client.call_tool("spawn_teammate", {
+                "team_name": "td1", "name": "worker", "prompt": "do work",
+                "backend": "desktop",
+            })
+            call_kwargs = mock_spawn.call_args.kwargs
+            assert call_kwargs["backend_type"] == "desktop"
+            assert call_kwargs["desktop_binary"] == "/fake/desktop"
+
+    async def test_spawn_with_tmux_backend_default(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "td2"})
+        with unittest.mock.patch("claude_teams.server.spawn_teammate") as mock_spawn:
+            mock_spawn.return_value = TeammateMember(
+                agent_id="worker@td2", name="worker", agent_type="general-purpose",
+                model="moonshot-ai/kimi-k2.5", prompt="do work", color="blue",
+                joined_at=0, tmux_pane_id="%1", cwd="/tmp",
+            )
+            await client.call_tool("spawn_teammate", {
+                "team_name": "td2", "name": "worker", "prompt": "do work",
+            })
+            call_kwargs = mock_spawn.call_args.kwargs
+            assert call_kwargs["backend_type"] == "tmux"
+            assert call_kwargs["desktop_binary"] is None
+
+    async def test_spawn_desktop_discovery_failure(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "td3"})
+        with unittest.mock.patch(
+            "claude_teams.server.discover_desktop_binary",
+            side_effect=FileNotFoundError("Desktop binary not found"),
+        ):
+            result = await client.call_tool(
+                "spawn_teammate",
+                {"team_name": "td3", "name": "worker", "prompt": "do work",
+                 "backend": "desktop"},
+                raise_on_error=False,
+            )
+            assert result.is_error is True
+            assert "not found" in result.content[0].text.lower()
+
+
+class TestForceKillDesktopBackend:
+    async def test_force_kill_desktop_agent(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "tk_d1"})
+        member = TeammateMember(
+            agent_id="worker@tk_d1", name="worker", agent_type="general-purpose",
+            model="kimi-k2.5", prompt="work", color="blue",
+            joined_at=int(time.time() * 1000), tmux_pane_id="", cwd="/tmp",
+            backend_type="desktop", process_id=5555,
+        )
+        teams.add_member("tk_d1", member)
+
+        with unittest.mock.patch("claude_teams.server.kill_desktop_process") as mock_kill_desktop, \
+             unittest.mock.patch("claude_teams.server.kill_tmux_pane") as mock_kill_tmux:
+            await client.call_tool(
+                "force_kill_teammate",
+                {"team_name": "tk_d1", "agent_name": "worker"},
+            )
+            mock_kill_desktop.assert_called_once_with(5555)
+            mock_kill_tmux.assert_not_called()
+
+    async def test_force_kill_tmux_agent_unchanged(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "tk_d2"})
+        member = TeammateMember(
+            agent_id="worker@tk_d2", name="worker", agent_type="general-purpose",
+            model="kimi-k2.5", prompt="work", color="blue",
+            joined_at=int(time.time() * 1000), tmux_pane_id="%42", cwd="/tmp",
+            backend_type="tmux",
+        )
+        teams.add_member("tk_d2", member)
+
+        with unittest.mock.patch("claude_teams.server.kill_tmux_pane") as mock_kill_tmux, \
+             unittest.mock.patch("claude_teams.server.kill_desktop_process") as mock_kill_desktop:
+            await client.call_tool(
+                "force_kill_teammate",
+                {"team_name": "tk_d2", "agent_name": "worker"},
+            )
+            mock_kill_tmux.assert_called_once_with("%42")
+            mock_kill_desktop.assert_not_called()
