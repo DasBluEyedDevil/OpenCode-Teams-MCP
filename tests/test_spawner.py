@@ -608,7 +608,7 @@ class TestConfigGenIntegration:
         self, mock_subprocess: MagicMock, mock_which: MagicMock,
         mock_validate: MagicMock, tmp_base_dir: Path, tmp_path: Path
     ) -> None:
-        """Verify spawn_teammate creates .opencode/config.json with MCP server entry"""
+        """Verify spawn_teammate creates opencode.json in project root with MCP server entry"""
         mock_which.return_value = "/usr/local/bin/opencode"
         mock_validate.return_value = "1.1.52"
         mock_subprocess.run.return_value.stdout = "%43\n"
@@ -627,8 +627,8 @@ class TestConfigGenIntegration:
             project_dir=project_dir,
         )
 
-        # Verify .opencode/config.json exists
-        opencode_json = project_dir / ".opencode" / "config.json"
+        # Verify opencode.json exists in project root
+        opencode_json = project_dir / "opencode.json"
         assert opencode_json.exists()
 
         # Verify content has opencode-teams MCP entry as McpLocalConfig
@@ -640,6 +640,7 @@ class TestConfigGenIntegration:
         mcp_entry = content["mcp"]["opencode-teams"]
         assert mcp_entry["type"] == "local"
         assert mcp_entry["command"] == ["uv", "run", "opencode-teams"]
+        assert mcp_entry["enabled"] is True
 
     def test_cleanup_agent_config_removes_file(self, tmp_path: Path) -> None:
         """Verify cleanup_agent_config removes the config file"""

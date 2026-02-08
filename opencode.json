@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode-files.s3.amazonaws.com/schemas/opencode.json",
+  "mcp": {
+    "opencode-teams": {
+      "type": "local",
+      "command": [
+        "uv",
+        "run",
+        "opencode-teams"
+      ],
+      "enabled": true
+    }
+  }
+}

@@ -208,13 +208,14 @@ def ensure_opencode_json(
     mcp_server_command: str,
     mcp_server_env: dict[str, str] | None = None,
 ) -> Path:
-    """Create or update .opencode/config.json with opencode-teams MCP server entry.
+    """Create or update opencode.json in the project root with opencode-teams MCP server entry.
 
-    If config.json exists, preserves all existing keys and merges the opencode-teams
+    OpenCode reads its configuration from ``opencode.json`` (or ``opencode.jsonc``)
+    in the project root — NOT from ``.opencode/config.json``.
+    See: https://opencode.ai/docs/config/
+
+    If opencode.json exists, preserves all existing keys and merges the opencode-teams
     MCP entry. If it doesn't exist, creates a new file with schema and MCP config.
-
-    OpenCode expects MCP entries as McpLocalConfig objects:
-    Example: {"mcp": {"opencode-teams": {"type": "local", "command": ["uv", "run", "opencode-teams"]}}}
 
     Args:
         project_dir: Project root directory
@@ -222,11 +223,9 @@ def ensure_opencode_json(
         mcp_server_env: Optional environment variables for MCP server
 
     Returns:
-        Path to .opencode/config.json
+        Path to opencode.json
     """
-    opencode_dir = project_dir / ".opencode"
-    opencode_dir.mkdir(parents=True, exist_ok=True)
-    opencode_json_path = opencode_dir / "config.json"
+    opencode_json_path = project_dir / "opencode.json"
 
     # Read existing or create new
     if opencode_json_path.exists():
@@ -246,6 +245,7 @@ def ensure_opencode_json(
     mcp_entry: dict[str, Any] = {
         "type": "local",
         "command": command_parts,
+        "enabled": True,
     }
     if mcp_server_env:
         mcp_entry["environment"] = mcp_server_env

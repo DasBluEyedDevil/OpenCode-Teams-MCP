@@ -60,16 +60,66 @@ async def app_lifespan(server):
 
 mcp = FastMCP(
     name="opencode-teams",
-    instructions=(
-        "MCP server for orchestrating OpenCode agent teams with Kimi K2.5. "
-        "Manages team creation, teammate spawning with Kimi K2.5, messaging, and task tracking."
-    ),
+    instructions="""\
+MCP server for orchestrating OpenCode agent teams.
+
+## Available Tools
+
+Use these tools (prefixed with `opencode-teams_` in OpenCode) for ALL team operations:
+
+### Team Management
+- `team_create(team_name, description)` — Create a new team. One team per session.
+- `team_delete(team_name)` — Delete a team (must remove all members first).
+- `read_config(team_name)` — Read current team configuration and members.
+- `server_status()` — Check MCP server health and session state.
+
+### Agent Spawning
+- `spawn_teammate(team_name, name, prompt, model, template, backend)` — Spawn a new agent.
+- `list_agent_templates()` — List available agent role templates.
+- `force_kill_teammate(team_name, agent_name)` — Force-stop an agent.
+- `check_agent_health(team_name, agent_name)` — Check if an agent is alive/dead/hung.
+- `check_all_agents_health(team_name)` — Check health of all agents.
+
+### Messaging
+- `send_message(team_name, type, recipient, content, summary, sender)` — Send messages.
+- `read_inbox(team_name, agent_name)` — Read an agent's inbox.
+- `poll_inbox(team_name, agent_name, timeout_ms)` — Long-poll for new messages.
+
+### Task Tracking
+- `task_create(team_name, subject, description)` — Create a task.
+- `task_update(team_name, task_id, status, owner, ...)` — Update a task.
+- `task_list(team_name)` — List all tasks.
+- `task_get(team_name, task_id)` — Get task details.
+
+## Typical Workflow
+1. Create a team with `team_create`
+2. Create tasks with `task_create`
+3. Spawn agents with `spawn_teammate`
+4. Monitor with `check_all_agents_health` and `read_inbox`
+5. Shut down agents and delete team when done
+
+IMPORTANT: These are MCP tools, not built-in commands. Call them as tool invocations.""",
     lifespan=app_lifespan,
 )
 
 
 def _get_lifespan(ctx: Context) -> dict[str, Any]:
     return ctx.lifespan_context
+
+
+@mcp.tool
+def server_status(ctx: Context) -> dict:
+    """Check MCP server health. Returns session info, active team, and server version.
+    Use this tool to verify the MCP connection is working correctly."""
+    ls = _get_lifespan(ctx)
+    return {
+        "status": "ok",
+        "server": "opencode-teams",
+        "session_id": ls.get("session_id", "unknown"),
+        "active_team": ls.get("active_team"),
+        "opencode_binary": ls.get("opencode_binary") or "not found",
+        "provider": ls.get("provider", "unknown"),
+    }
 
 
 @mcp.tool
