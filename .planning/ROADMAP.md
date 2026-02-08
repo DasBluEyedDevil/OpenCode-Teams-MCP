@@ -107,11 +107,11 @@ Plans:
   1. The system ships with at least 4 pre-built templates: researcher, implementer, reviewer, tester
   2. Spawning an agent with a template produces a config file with role-specific system prompt instructions (e.g., reviewer focuses on code review, tester focuses on test execution)
   3. A user can customize a template at spawn time by providing additional prompt text that is injected into the generated config
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 06-01: Template data model and built-in role definitions
-- [ ] 06-02: Template selection and prompt customization at spawn time
+- [ ] 06-01-PLAN.md -- Template data model (AgentTemplate dataclass), 4 built-in role definitions, and config_gen extension for role_instructions/custom_instructions injection
+- [ ] 06-02-PLAN.md -- Wire template lookup into spawn flow and MCP tools: template param on spawn_teammate, list_agent_templates tool
 
 ### Phase 7: Desktop Spawning
 **Goal**: The system can spawn OpenCode desktop app instances as an alternative to CLI tmux panes, on Windows, macOS, and Linux
