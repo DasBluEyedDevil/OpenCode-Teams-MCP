@@ -90,9 +90,11 @@ def generate_agent_config(
         ```
         claude-teams_send_message(
             team_name="{team_name}",
-            from_agent="{name}",
-            to_agent="team-lead",
-            message="Status update: task completed"
+            type="message",
+            recipient="team-lead",
+            content="Status update: task completed",
+            summary="status update",
+            sender="{name}"
         )
         ```
 
