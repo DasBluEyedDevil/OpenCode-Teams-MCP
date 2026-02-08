@@ -38,7 +38,7 @@ None.
 
 ### Blockers/Concerns
 
-- [OPEN]: Windows native support -- fcntl is POSIX-only, tests require WSL/Linux
+- [RESOLVED]: Windows native support -- tests now pass on Windows (329 passed, 1 skipped)
 
 ## Session Continuity
 
