@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Agent Config Generation** - Dynamically generate `.opencode/agents/<name>.md` files with team context, MCP tools, and permissions ✓
 - [x] **Phase 3: Spawn Execution** - Construct and execute `opencode run` commands in tmux panes with timeout protection ✓
 - [x] **Phase 4: MCP Communication Validation** - Verify spawned agents can exchange messages and share state through the MCP server ✓
-- [ ] **Phase 5: Agent Health & Monitoring** - Detect dead/hung agents and force-kill unresponsive instances
+- [x] **Phase 5: Agent Health & Monitoring** - Detect dead/hung agents and force-kill unresponsive instances ✓
 - [ ] **Phase 6: Agent Templates** - Pre-built role templates for common agent specializations
 - [ ] **Phase 7: Desktop Spawning** - Support launching OpenCode desktop app as an alternative to CLI
 - [ ] **Phase 8: Legacy Cleanup** - Remove all Claude Code-specific code paths, update tests and documentation
@@ -96,8 +96,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md -- Core health detection functions: AgentHealthStatus model, check_pane_alive, capture_pane_content_hash, check_single_agent_health, health state persistence, and tests
-- [ ] 05-02-PLAN.md -- MCP tool exposure: check_agent_health and check_all_agents_health tools with integration tests
+- [x] 05-01-PLAN.md -- Core health detection functions: AgentHealthStatus model, check_pane_alive, capture_pane_content_hash, check_single_agent_health, health state persistence, and tests ✓
+- [x] 05-02-PLAN.md -- MCP tool exposure: check_agent_health and check_all_agents_health tools with integration tests ✓
 
 ### Phase 6: Agent Templates
 **Goal**: Users can spawn agents with pre-built role templates (researcher, implementer, reviewer, tester) that include role-appropriate system prompts and can be customized per-spawn
@@ -156,7 +156,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 2. Agent Config Generation | 2/2 | ✓ Complete | 2026-02-08 |
 | 3. Spawn Execution | 1/1 | ✓ Complete | 2026-02-08 |
 | 4. MCP Communication Validation | 2/2 | ✓ Complete | 2026-02-08 |
-| 5. Agent Health & Monitoring | 0/2 | Not started | - |
+| 5. Agent Health & Monitoring | 2/2 | ✓ Complete | 2026-02-08 |
 | 6. Agent Templates | 0/2 | Not started | - |
 | 7. Desktop Spawning | 0/2 | Not started | - |
 | 8. Legacy Cleanup | 0/4 | Not started | - |
