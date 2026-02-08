@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import time
+import unittest.mock
 from pathlib import Path
 
 import pytest
 from fastmcp import Client
 
 from claude_teams import messaging, tasks, teams
-from claude_teams.models import TeammateMember
+from claude_teams.models import AgentHealthStatus, TeammateMember
 from claude_teams.server import mcp
 
 
@@ -619,3 +620,282 @@ class TestConfigCleanup:
             assert call_args is not None
             # Second positional arg should be agent name
             assert call_args[0][1] == "worker2"
+
+
+def _make_alive_status(name: str, pane_id: str = "%1", content_hash: str = "abc123") -> AgentHealthStatus:
+    return AgentHealthStatus(
+        agent_name=name,
+        pane_id=pane_id,
+        status="alive",
+        last_content_hash=content_hash,
+        detail="Pane is active",
+    )
+
+
+def _make_dead_status(name: str, pane_id: str = "%1") -> AgentHealthStatus:
+    return AgentHealthStatus(
+        agent_name=name,
+        pane_id=pane_id,
+        status="dead",
+        detail="Pane is missing or dead",
+    )
+
+
+def _make_hung_status(name: str, pane_id: str = "%1", content_hash: str = "abc123") -> AgentHealthStatus:
+    return AgentHealthStatus(
+        agent_name=name,
+        pane_id=pane_id,
+        status="hung",
+        last_content_hash=content_hash,
+        detail="Content unchanged for 130s (threshold: 120s)",
+    )
+
+
+class TestCheckAgentHealth:
+    async def test_returns_alive_for_live_agent(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "th1"})
+        teams.add_member("th1", _make_teammate("worker", "th1", pane_id="%10"))
+
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            return_value=_make_alive_status("worker", "%10"),
+        ):
+            result = _data(
+                await client.call_tool(
+                    "check_agent_health",
+                    {"team_name": "th1", "agent_name": "worker"},
+                )
+            )
+        assert result["status"] == "alive"
+        assert result["agentName"] == "worker"
+        assert result["paneId"] == "%10"
+
+    async def test_returns_dead_for_missing_pane(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "th2"})
+        teams.add_member("th2", _make_teammate("worker", "th2", pane_id="%20"))
+
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            return_value=_make_dead_status("worker", "%20"),
+        ):
+            result = _data(
+                await client.call_tool(
+                    "check_agent_health",
+                    {"team_name": "th2", "agent_name": "worker"},
+                )
+            )
+        assert result["status"] == "dead"
+        assert result["agentName"] == "worker"
+
+    async def test_raises_for_unknown_agent(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "th3"})
+        result = await client.call_tool(
+            "check_agent_health",
+            {"team_name": "th3", "agent_name": "ghost"},
+            raise_on_error=False,
+        )
+        assert result.is_error is True
+        assert "ghost" in result.content[0].text
+
+    async def test_returns_hung_on_second_call_with_unchanged_content(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "th4"})
+        teams.add_member("th4", _make_teammate("worker", "th4", pane_id="%30"))
+
+        # First call returns alive with a content hash
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            return_value=_make_alive_status("worker", "%30", content_hash="samehash"),
+        ):
+            result1 = _data(
+                await client.call_tool(
+                    "check_agent_health",
+                    {"team_name": "th4", "agent_name": "worker"},
+                )
+            )
+        assert result1["status"] == "alive"
+
+        # Second call: same hash, enough time passed -> hung
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            return_value=_make_hung_status("worker", "%30", content_hash="samehash"),
+        ):
+            result2 = _data(
+                await client.call_tool(
+                    "check_agent_health",
+                    {"team_name": "th4", "agent_name": "worker"},
+                )
+            )
+        assert result2["status"] == "hung"
+
+    async def test_health_state_persists_between_calls(self, client: Client):
+        """Verify that health state is saved and loaded between calls."""
+        await client.call_tool("team_create", {"team_name": "th5"})
+        teams.add_member("th5", _make_teammate("worker", "th5", pane_id="%40"))
+
+        call_args_list = []
+
+        def capture_check(member, previous_hash=None, last_change_time=None):
+            call_args_list.append({
+                "previous_hash": previous_hash,
+                "last_change_time": last_change_time,
+            })
+            return _make_alive_status(member.name, member.tmux_pane_id, content_hash="hash1")
+
+        # First call: no previous state
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            side_effect=capture_check,
+        ):
+            await client.call_tool(
+                "check_agent_health",
+                {"team_name": "th5", "agent_name": "worker"},
+            )
+
+        assert call_args_list[0]["previous_hash"] is None
+        assert call_args_list[0]["last_change_time"] is None
+
+        # Second call: should have persisted state from first call
+        def capture_check_2(member, previous_hash=None, last_change_time=None):
+            call_args_list.append({
+                "previous_hash": previous_hash,
+                "last_change_time": last_change_time,
+            })
+            return _make_alive_status(member.name, member.tmux_pane_id, content_hash="hash2")
+
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            side_effect=capture_check_2,
+        ):
+            await client.call_tool(
+                "check_agent_health",
+                {"team_name": "th5", "agent_name": "worker"},
+            )
+
+        assert call_args_list[1]["previous_hash"] == "hash1"
+        assert call_args_list[1]["last_change_time"] is not None
+
+    async def test_uses_camel_case_aliases_in_response(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "th6"})
+        teams.add_member("th6", _make_teammate("worker", "th6", pane_id="%50"))
+
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            return_value=_make_alive_status("worker", "%50", content_hash="xyz"),
+        ):
+            result = _data(
+                await client.call_tool(
+                    "check_agent_health",
+                    {"team_name": "th6", "agent_name": "worker"},
+                )
+            )
+        # Should use camelCase keys (by_alias=True)
+        assert "agentName" in result
+        assert "paneId" in result
+        assert "lastContentHash" in result
+        # Should NOT have snake_case keys
+        assert "agent_name" not in result
+        assert "pane_id" not in result
+
+
+class TestCheckAllAgentsHealth:
+    async def test_returns_status_for_all_teammates(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "ta1"})
+        teams.add_member("ta1", _make_teammate("worker1", "ta1", pane_id="%60"))
+        teams.add_member("ta1", _make_teammate("worker2", "ta1", pane_id="%61"))
+
+        def mock_check(member, previous_hash=None, last_change_time=None):
+            return _make_alive_status(member.name, member.tmux_pane_id)
+
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            side_effect=mock_check,
+        ):
+            result = _data(
+                await client.call_tool(
+                    "check_all_agents_health",
+                    {"team_name": "ta1"},
+                )
+            )
+        assert len(result) == 2
+        names = {r["agentName"] for r in result}
+        assert names == {"worker1", "worker2"}
+        assert all(r["status"] == "alive" for r in result)
+
+    async def test_excludes_lead_member(self, client: Client):
+        """Lead member should not appear in health check results."""
+        await client.call_tool("team_create", {"team_name": "ta2"})
+        teams.add_member("ta2", _make_teammate("worker", "ta2", pane_id="%70"))
+
+        def mock_check(member, previous_hash=None, last_change_time=None):
+            return _make_alive_status(member.name, member.tmux_pane_id)
+
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            side_effect=mock_check,
+        ):
+            result = _data(
+                await client.call_tool(
+                    "check_all_agents_health",
+                    {"team_name": "ta2"},
+                )
+            )
+        # Only teammate, not team-lead
+        assert len(result) == 1
+        assert result[0]["agentName"] == "worker"
+
+    async def test_returns_empty_list_for_no_teammates(self, client: Client):
+        await client.call_tool("team_create", {"team_name": "ta3"})
+        result = _data(
+            await client.call_tool(
+                "check_all_agents_health",
+                {"team_name": "ta3"},
+            )
+        )
+        assert result == []
+
+    async def test_persists_health_state_for_all_agents(self, client: Client):
+        """Verify health state is saved for all agents after batch check."""
+        await client.call_tool("team_create", {"team_name": "ta4"})
+        teams.add_member("ta4", _make_teammate("w1", "ta4", pane_id="%80"))
+        teams.add_member("ta4", _make_teammate("w2", "ta4", pane_id="%81"))
+
+        call_count = {"n": 0}
+
+        def mock_check(member, previous_hash=None, last_change_time=None):
+            call_count["n"] += 1
+            return _make_alive_status(member.name, member.tmux_pane_id, content_hash=f"hash_{member.name}")
+
+        # First call
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            side_effect=mock_check,
+        ):
+            await client.call_tool(
+                "check_all_agents_health",
+                {"team_name": "ta4"},
+            )
+
+        assert call_count["n"] == 2
+
+        # Second call: verify state was passed (previous_hash should be set)
+        captured_args = []
+
+        def mock_check_2(member, previous_hash=None, last_change_time=None):
+            captured_args.append({
+                "name": member.name,
+                "previous_hash": previous_hash,
+            })
+            return _make_alive_status(member.name, member.tmux_pane_id, content_hash=f"hash2_{member.name}")
+
+        with unittest.mock.patch(
+            "claude_teams.server.check_single_agent_health",
+            side_effect=mock_check_2,
+        ):
+            await client.call_tool(
+                "check_all_agents_health",
+                {"team_name": "ta4"},
+            )
+
+        # Both agents should have previous hashes from first call
+        for arg in captured_args:
+            assert arg["previous_hash"] is not None, f"No previous hash for {arg['name']}"
