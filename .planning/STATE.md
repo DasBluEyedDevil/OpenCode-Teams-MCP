@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** Kimi K2.5 agents in OpenCode can coordinate as teams with shared task lists and messaging
-**Current focus:** Phase 6 complete - Ready for Phase 7
+**Current focus:** Phase 7 in progress - Desktop Spawning
 
 ## Current Position
 
-Phase: 6 of 8 (Agent Templates)
-Plan: 2 of 2 in current phase
-Status: Phase complete
-Last activity: 2026-02-08 -- Completed 06-02-PLAN.md (Template Spawn Wiring)
+Phase: 7 of 8 (Desktop Spawning)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-08 -- Completed 07-01-PLAN.md (Desktop Process Lifecycle)
 
-Progress: [████████████░] 79%
+Progress: [█████████████░] 86%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: 6 minutes
-- Total execution time: 1.2 hours
+- Total execution time: 1.3 hours
 
 **By Phase:**
 
@@ -33,9 +33,10 @@ Progress: [████████████░] 79%
 | 04 | 2/2 | 13m | 6.5m |
 | 05 | 2/2 | 10m | 5m |
 | 06 | 2/2 | 7m | 3.5m |
+| 07 | 1/2 | 4m | 4m |
 
 **Recent Trend:**
-- Last 5 plans: 04-02 (7m), 05-01 (5m), 05-02 (5m), 06-01 (4m), 06-02 (3m)
+- Last 5 plans: 05-01 (5m), 05-02 (5m), 06-01 (4m), 06-02 (3m), 07-01 (4m)
 - Trend: Sustained fast execution for targeted plans
 
 *Updated after each plan completion*
@@ -78,6 +79,9 @@ Recent decisions affecting current work:
 - [06-02]: Template lookup happens in server.py (MCP tool layer), not spawner.py -- spawner receives resolved role_instructions
 - [06-02]: subagent_type derived from template name in server.py, not passed as separate param by caller
 - [06-02]: Replaced subagent_type param with template param on spawn_teammate_tool
+- [07-01]: Desktop binary discovery mirrors discover_opencode_binary() pattern but adds env var and known-paths tiers
+- [07-01]: launch_desktop_app uses subprocess.Popen directly (not platform launchers) to get real PID
+- [07-01]: process_id field defaults to 0 (not None) to avoid optional handling complexity
 
 ### Pending Todos
 
@@ -93,5 +97,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 06-02 (Template Spawn Wiring) - Phase 6 complete, ready for Phase 7
-Resume file: .planning/phases/06-agent-templates/06-02-SUMMARY.md
+Stopped at: Completed 07-01 (Desktop Process Lifecycle) - Phase 7 plan 1 complete, ready for plan 2
+Resume file: .planning/phases/07-desktop-spawning/07-01-SUMMARY.md
