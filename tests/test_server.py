@@ -34,7 +34,7 @@ async def client(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(tasks, "TASKS_DIR", tmp_path / "tasks")
     monkeypatch.setattr(messaging, "TEAMS_DIR", tmp_path / "teams")
     monkeypatch.setattr(
-        "claude_teams.server.discover_claude_binary", lambda: "/usr/bin/echo"
+        "claude_teams.server.discover_opencode_binary", lambda: "/usr/bin/echo"
     )
     (tmp_path / "teams").mkdir()
     (tmp_path / "tasks").mkdir()
@@ -537,3 +537,45 @@ class TestPlanApprovalValidation:
         )
         assert result.is_error is True
         assert "recipient" in result.content[0].text.lower()
+
+
+class TestModelTranslationWiring:
+    async def test_spawn_passes_translated_model(self, client: Client):
+        """Verify that spawn_teammate_tool translates 'sonnet' to provider/model format."""
+        await client.call_tool("team_create", {"team_name": "tm1"})
+        # Mock spawn_teammate to capture the model argument without actually spawning
+        import unittest.mock
+        with unittest.mock.patch("claude_teams.server.spawn_teammate") as mock_spawn:
+            mock_spawn.return_value = TeammateMember(
+                agent_id="worker@tm1", name="worker", agent_type="general-purpose",
+                model="moonshot-ai/kimi-k2.5", prompt="do work", color="blue",
+                joined_at=0, tmux_pane_id="%1", cwd="/tmp",
+            )
+            await client.call_tool("spawn_teammate", {
+                "team_name": "tm1", "name": "worker", "prompt": "do work", "model": "sonnet",
+            })
+            # The model passed to spawn_teammate should be the translated version
+            call_kwargs = mock_spawn.call_args
+            assert call_kwargs is not None
+            # Check that 'model' kwarg is the translated string
+            if call_kwargs.kwargs:
+                assert call_kwargs.kwargs.get("model") == "moonshot-ai/kimi-k2.5"
+
+    async def test_spawn_passes_through_direct_model(self, client: Client):
+        """Verify that a direct provider/model string passes through unchanged."""
+        await client.call_tool("team_create", {"team_name": "tm2"})
+        import unittest.mock
+        with unittest.mock.patch("claude_teams.server.spawn_teammate") as mock_spawn:
+            mock_spawn.return_value = TeammateMember(
+                agent_id="worker@tm2", name="worker", agent_type="general-purpose",
+                model="openrouter/moonshotai/kimi-k2.5", prompt="do work", color="blue",
+                joined_at=0, tmux_pane_id="%1", cwd="/tmp",
+            )
+            await client.call_tool("spawn_teammate", {
+                "team_name": "tm2", "name": "worker", "prompt": "do work",
+                "model": "openrouter/moonshotai/kimi-k2.5",
+            })
+            call_kwargs = mock_spawn.call_args
+            assert call_kwargs is not None
+            if call_kwargs.kwargs:
+                assert call_kwargs.kwargs.get("model") == "openrouter/moonshotai/kimi-k2.5"
