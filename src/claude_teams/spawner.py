@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import shlex
 import shutil
@@ -9,7 +11,7 @@ from pathlib import Path
 
 from claude_teams import messaging, teams
 from claude_teams.config_gen import generate_agent_config, write_agent_config, ensure_opencode_json
-from claude_teams.models import COLOR_PALETTE, InboxMessage, TeammateMember
+from claude_teams.models import AgentHealthStatus, COLOR_PALETTE, InboxMessage, TeammateMember
 from claude_teams.teams import _VALID_NAME_RE
 
 
@@ -250,6 +252,179 @@ def cleanup_agent_config(project_dir: Path, name: str) -> None:
     """
     config_file = project_dir / ".opencode" / "agents" / f"{name}.md"
     config_file.unlink(missing_ok=True)
+
+
+# Agent health detection constants and functions
+
+DEFAULT_HUNG_TIMEOUT_SECONDS = 120
+DEFAULT_GRACE_PERIOD_SECONDS = 60
+
+
+def check_pane_alive(pane_id: str) -> bool:
+    """Check whether a tmux pane is alive.
+
+    Uses ``tmux display-message`` to query ``pane_dead`` for the given pane.
+
+    Args:
+        pane_id: tmux pane identifier (e.g. ``%42``).
+
+    Returns:
+        True if the pane exists and is not dead, False otherwise.
+    """
+    if not pane_id:
+        return False
+    try:
+        result = subprocess.run(
+            ["tmux", "display-message", "-p", "-t", pane_id, "#{pane_dead}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+    if result.returncode != 0:
+        return False
+    return result.stdout.strip() == "0"
+
+
+def capture_pane_content_hash(pane_id: str) -> str | None:
+    """Capture visible pane content and return its SHA-256 hex digest.
+
+    Uses ``tmux capture-pane -p`` (visible content only -- no ``-S-`` flag
+    to avoid known hangs with large scroll-back buffers).
+
+    Args:
+        pane_id: tmux pane identifier (e.g. ``%42``).
+
+    Returns:
+        64-character hex digest of the pane content, or None on failure.
+    """
+    if not pane_id:
+        return None
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-p", "-t", pane_id],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if result.returncode != 0:
+        return None
+    return hashlib.sha256(result.stdout.encode()).hexdigest()
+
+
+def load_health_state(team_name: str, base_dir: Path | None = None) -> dict:
+    """Load persisted health state for a team.
+
+    Args:
+        team_name: Name of the team.
+        base_dir: Override base directory (for testing). Defaults to ``~/.claude``.
+
+    Returns:
+        Dict keyed by agent name, each value ``{"hash": str, "last_change_time": float}``.
+        Returns empty dict if no health file exists.
+    """
+    teams_dir = (base_dir / "teams") if base_dir else teams.TEAMS_DIR
+    health_path = teams_dir / team_name / "health.json"
+    if not health_path.exists():
+        return {}
+    return json.loads(health_path.read_text())
+
+
+def save_health_state(team_name: str, state: dict, base_dir: Path | None = None) -> None:
+    """Persist health state for a team.
+
+    Args:
+        team_name: Name of the team.
+        state: Dict keyed by agent name with hash and timestamp.
+        base_dir: Override base directory (for testing). Defaults to ``~/.claude``.
+    """
+    teams_dir = (base_dir / "teams") if base_dir else teams.TEAMS_DIR
+    health_path = teams_dir / team_name / "health.json"
+    health_path.parent.mkdir(parents=True, exist_ok=True)
+    health_path.write_text(json.dumps(state, indent=2))
+
+
+def check_single_agent_health(
+    member: TeammateMember,
+    previous_hash: str | None,
+    last_change_time: float | None,
+    hung_timeout: int = DEFAULT_HUNG_TIMEOUT_SECONDS,
+    grace_period: int = DEFAULT_GRACE_PERIOD_SECONDS,
+) -> AgentHealthStatus:
+    """Determine the health status of a single agent.
+
+    Combines pane liveness, content hashing for hung detection, and a grace
+    period for newly spawned agents.
+
+    Args:
+        member: The teammate member to check.
+        previous_hash: Last known content hash (or None if first check).
+        last_change_time: Epoch timestamp when content last changed (or None).
+        hung_timeout: Seconds of unchanged content before declaring hung.
+        grace_period: Seconds after spawn during which the agent is not
+            considered hung (allows for startup time).
+
+    Returns:
+        AgentHealthStatus with the determined status and detail.
+    """
+    pane_id = member.tmux_pane_id
+
+    # Step 1: pane liveness
+    if not check_pane_alive(pane_id):
+        return AgentHealthStatus(
+            agent_name=member.name,
+            pane_id=pane_id,
+            status="dead",
+            detail="Pane is missing or dead",
+        )
+
+    # Step 2: capture content hash
+    current_hash = capture_pane_content_hash(pane_id)
+    if current_hash is None:
+        return AgentHealthStatus(
+            agent_name=member.name,
+            pane_id=pane_id,
+            status="unknown",
+            detail="Failed to capture pane content",
+        )
+
+    # Step 3: grace period -- recently spawned agents are always "alive"
+    age_seconds = (time.time() * 1000 - member.joined_at) / 1000
+    if age_seconds < grace_period:
+        return AgentHealthStatus(
+            agent_name=member.name,
+            pane_id=pane_id,
+            status="alive",
+            last_content_hash=current_hash,
+            detail=f"Within grace period ({age_seconds:.0f}s / {grace_period}s)",
+        )
+
+    # Step 4: hung detection
+    if (
+        previous_hash is not None
+        and current_hash == previous_hash
+        and last_change_time is not None
+        and time.time() - last_change_time >= hung_timeout
+    ):
+        return AgentHealthStatus(
+            agent_name=member.name,
+            pane_id=pane_id,
+            status="hung",
+            last_content_hash=current_hash,
+            detail=f"Content unchanged for {time.time() - last_change_time:.0f}s (threshold: {hung_timeout}s)",
+        )
+
+    # Step 5: alive
+    return AgentHealthStatus(
+        agent_name=member.name,
+        pane_id=pane_id,
+        status="alive",
+        last_content_hash=current_hash,
+        detail="Pane is active",
+    )
 
 
 # OpenCode binary discovery and configuration functions

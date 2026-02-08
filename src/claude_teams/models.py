@@ -164,3 +164,13 @@ class SendMessageResult(BaseModel):
     routing: dict | None = None
     request_id: str | None = None
     target: str | None = None
+
+
+class AgentHealthStatus(BaseModel):
+    model_config = {"populate_by_name": True}
+
+    agent_name: str = Field(alias="agentName")
+    pane_id: str = Field(alias="paneId")
+    status: Literal["alive", "dead", "hung", "unknown"]
+    last_content_hash: str | None = Field(alias="lastContentHash", default=None)
+    detail: str = ""
