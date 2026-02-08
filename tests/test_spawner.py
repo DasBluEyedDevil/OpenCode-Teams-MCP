@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -11,8 +12,17 @@ from claude_teams.spawner import (
     assign_color,
     build_spawn_command,
     discover_claude_binary,
+    discover_opencode_binary,
+    get_credential_env_var,
+    get_provider_config,
     kill_tmux_pane,
     spawn_teammate,
+    translate_model,
+    validate_opencode_version,
+    MINIMUM_OPENCODE_VERSION,
+    MODEL_ALIASES,
+    PROVIDER_CONFIGS,
+    PROVIDER_MODEL_MAP,
 )
 
 
@@ -179,3 +189,176 @@ class TestKillTmuxPane:
         mock_subprocess.run.assert_called_once_with(
             ["tmux", "kill-pane", "-t", "%99"], check=False
         )
+
+
+# OpenCode tests
+
+
+class TestDiscoverOpencodeBinary:
+    @patch("claude_teams.spawner.subprocess.run")
+    @patch("claude_teams.spawner.shutil.which")
+    def test_found_and_valid_version(
+        self, mock_which: MagicMock, mock_run: MagicMock
+    ) -> None:
+        mock_which.return_value = "/usr/local/bin/opencode"
+        mock_run.return_value.stdout = "1.1.52\n"
+        mock_run.return_value.stderr = ""
+        assert discover_opencode_binary() == "/usr/local/bin/opencode"
+        mock_which.assert_called_once_with("opencode")
+
+    @patch("claude_teams.spawner.shutil.which")
+    def test_not_found(self, mock_which: MagicMock) -> None:
+        mock_which.return_value = None
+        with pytest.raises(FileNotFoundError, match="opencode"):
+            discover_opencode_binary()
+
+    @patch("claude_teams.spawner.subprocess.run")
+    @patch("claude_teams.spawner.shutil.which")
+    def test_version_too_old(
+        self, mock_which: MagicMock, mock_run: MagicMock
+    ) -> None:
+        mock_which.return_value = "/usr/local/bin/opencode"
+        mock_run.return_value.stdout = "1.1.40\n"
+        mock_run.return_value.stderr = ""
+        with pytest.raises(RuntimeError, match="too old"):
+            discover_opencode_binary()
+
+    @patch("claude_teams.spawner.subprocess.run")
+    @patch("claude_teams.spawner.shutil.which")
+    def test_version_with_v_prefix(
+        self, mock_which: MagicMock, mock_run: MagicMock
+    ) -> None:
+        mock_which.return_value = "/usr/local/bin/opencode"
+        mock_run.return_value.stdout = "v1.1.53\n"
+        mock_run.return_value.stderr = ""
+        assert discover_opencode_binary() == "/usr/local/bin/opencode"
+
+    @patch("claude_teams.spawner.subprocess.run")
+    @patch("claude_teams.spawner.shutil.which")
+    def test_version_with_verbose_output(
+        self, mock_which: MagicMock, mock_run: MagicMock
+    ) -> None:
+        mock_which.return_value = "/usr/local/bin/opencode"
+        mock_run.return_value.stdout = "opencode version v1.1.52\n"
+        mock_run.return_value.stderr = ""
+        assert discover_opencode_binary() == "/usr/local/bin/opencode"
+
+
+class TestValidateOpencodeVersion:
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_valid_version(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.stdout = "1.1.52\n"
+        mock_run.return_value.stderr = ""
+        assert validate_opencode_version("/usr/local/bin/opencode") == "1.1.52"
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_newer_version(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.stdout = "2.0.0\n"
+        mock_run.return_value.stderr = ""
+        assert validate_opencode_version("/usr/local/bin/opencode") == "2.0.0"
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_old_version_raises(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.stdout = "1.1.49\n"
+        mock_run.return_value.stderr = ""
+        with pytest.raises(RuntimeError, match="too old"):
+            validate_opencode_version("/usr/local/bin/opencode")
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_unparseable_output_raises(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.stdout = "unknown\n"
+        mock_run.return_value.stderr = ""
+        with pytest.raises(RuntimeError, match="Could not parse"):
+            validate_opencode_version("/usr/local/bin/opencode")
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_timeout_raises(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = subprocess.TimeoutExpired(
+            cmd="opencode", timeout=10
+        )
+        with pytest.raises(RuntimeError, match="Timed out"):
+            validate_opencode_version("/usr/local/bin/opencode")
+
+    @patch("claude_teams.spawner.subprocess.run")
+    def test_binary_not_found_raises(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = FileNotFoundError
+        with pytest.raises(RuntimeError):
+            validate_opencode_version("/usr/local/bin/opencode")
+
+
+class TestTranslateModel:
+    def test_sonnet_moonshot(self) -> None:
+        assert translate_model("sonnet", "moonshot-ai") == "moonshot-ai/kimi-k2.5"
+
+    def test_opus_moonshot(self) -> None:
+        assert translate_model("opus", "moonshot-ai") == "moonshot-ai/kimi-k2.5"
+
+    def test_haiku_openrouter(self) -> None:
+        assert (
+            translate_model("haiku", "openrouter")
+            == "openrouter/moonshotai/kimi-k2.5"
+        )
+
+    def test_sonnet_novita(self) -> None:
+        assert translate_model("sonnet", "novita") == "novita/moonshotai/kimi-k2.5"
+
+    def test_passthrough_provider_model(self) -> None:
+        assert (
+            translate_model("moonshot-ai/kimi-k2.5") == "moonshot-ai/kimi-k2.5"
+        )
+
+    def test_passthrough_arbitrary(self) -> None:
+        assert translate_model("custom/my-model") == "custom/my-model"
+
+    def test_unknown_alias_as_model_name(self) -> None:
+        assert translate_model("kimi-k2.5", "moonshot-ai") == "moonshot-ai/kimi-k2.5"
+
+    def test_default_provider(self) -> None:
+        assert translate_model("sonnet") == "moonshot-ai/kimi-k2.5"
+
+
+class TestGetProviderConfig:
+    def test_moonshot_ai(self) -> None:
+        result = get_provider_config("moonshot-ai")
+        assert "moonshot-ai" in result
+        assert result["moonshot-ai"]["apiKey"] == "{env:MOONSHOT_API_KEY}"
+
+    def test_openrouter(self) -> None:
+        result = get_provider_config("openrouter")
+        assert result["openrouter"]["apiKey"] == "{env:OPENROUTER_API_KEY}"
+
+    def test_novita_has_base_url(self) -> None:
+        result = get_provider_config("novita")
+        assert (
+            result["novita"]["options"]["baseURL"]
+            == "https://api.novita.ai/openai"
+        )
+
+    def test_novita_has_npm_package(self) -> None:
+        result = get_provider_config("novita")
+        assert "npm" in result["novita"]
+
+    def test_unknown_provider_raises(self) -> None:
+        with pytest.raises(ValueError, match="Unknown provider"):
+            get_provider_config("unknown-provider")
+
+    def test_no_hardcoded_keys(self) -> None:
+        for provider in PROVIDER_CONFIGS.keys():
+            result = get_provider_config(provider)
+            result_str = str(result)
+            assert "sk-" not in result_str
+            assert "{env:" in result_str
+
+
+class TestGetCredentialEnvVar:
+    def test_moonshot(self) -> None:
+        assert get_credential_env_var("moonshot-ai") == "MOONSHOT_API_KEY"
+
+    def test_openrouter(self) -> None:
+        assert get_credential_env_var("openrouter") == "OPENROUTER_API_KEY"
+
+    def test_novita(self) -> None:
+        assert get_credential_env_var("novita") == "NOVITA_API_KEY"
+
+    def test_unknown_fallback(self) -> None:
+        assert get_credential_env_var("my-custom") == "MY_CUSTOM_API_KEY"
