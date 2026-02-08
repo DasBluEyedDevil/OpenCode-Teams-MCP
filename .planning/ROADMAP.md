@@ -12,7 +12,7 @@ This roadmap replaces the Claude Code spawning layer with OpenCode CLI + Kimi K2
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Binary Discovery & Model Configuration** - Find OpenCode on PATH and translate model specifications to Kimi K2.5 format
+- [x] **Phase 1: Binary Discovery & Model Configuration** - Find OpenCode on PATH and translate model specifications to Kimi K2.5 format ✓
 - [ ] **Phase 2: Agent Config Generation** - Dynamically generate `.opencode/agents/<name>.md` files with team context, MCP tools, and permissions
 - [ ] **Phase 3: Spawn Execution** - Construct and execute `opencode run` commands in tmux panes with timeout protection
 - [ ] **Phase 4: MCP Communication Validation** - Verify spawned agents can exchange messages and share state through the MCP server
@@ -36,8 +36,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- OpenCode binary discovery, version validation, model translation, and provider config functions
-- [ ] 01-02-PLAN.md -- Wire discovery and model translation into MCP server layer
+- [x] 01-01-PLAN.md -- OpenCode binary discovery, version validation, model translation, and provider config functions ✓
+- [x] 01-02-PLAN.md -- Wire discovery and model translation into MCP server layer ✓
 
 ### Phase 2: Agent Config Generation
 **Goal**: The system generates complete, valid `.opencode/agents/<name>.md` config files that give a spawned agent its identity, team awareness, communication instructions, and MCP tool access
@@ -155,7 +155,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Binary Discovery & Model Configuration | 0/2 | Planning complete | - |
+| 1. Binary Discovery & Model Configuration | 2/2 | ✓ Complete | 2026-02-08 |
 | 2. Agent Config Generation | 0/3 | Not started | - |
 | 3. Spawn Execution | 0/3 | Not started | - |
 | 4. MCP Communication Validation | 0/2 | Not started | - |
