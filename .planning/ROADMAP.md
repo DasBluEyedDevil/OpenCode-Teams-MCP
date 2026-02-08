@@ -79,11 +79,11 @@ Plans:
   1. A spawned agent can call read_inbox, send_message, and task_* MCP tools and receive correct responses
   2. Two agents spawned in the same team can exchange messages through the MCP server (agent A sends, agent B receives)
   3. MCP server state is shared across all spawned agents via the filesystem backend at `~/.claude/` (not isolated per process)
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 04-01: Single-agent MCP tool access verification
-- [ ] 04-02: Multi-agent state sharing and message exchange validation
+- [ ] 04-01-PLAN.md -- Single-agent MCP tool access verification and config_gen send_message fix
+- [ ] 04-02-PLAN.md -- Multi-agent message exchange, task sharing, and filesystem state verification
 
 ### Phase 5: Agent Health & Monitoring
 **Goal**: The system can detect when a spawned agent has died or hung, and forcefully terminate unresponsive agents
