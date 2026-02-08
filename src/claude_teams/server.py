@@ -16,21 +16,21 @@ from claude_teams.models import (
     SpawnResult,
     TeammateMember,
 )
-from claude_teams.spawner import discover_claude_binary, kill_tmux_pane, spawn_teammate
+from claude_teams.spawner import discover_opencode_binary, kill_tmux_pane, spawn_teammate, translate_model
 
 
 @lifespan
 async def app_lifespan(server):
-    claude_binary = discover_claude_binary()
+    opencode_binary = discover_opencode_binary()
     session_id = str(uuid.uuid4())
-    yield {"claude_binary": claude_binary, "session_id": session_id, "active_team": None}
+    yield {"opencode_binary": opencode_binary, "session_id": session_id, "active_team": None, "provider": "moonshot-ai"}
 
 
 mcp = FastMCP(
     name="claude-teams",
     instructions=(
-        "MCP server for orchestrating Claude Code agent teams. "
-        "Manages team creation, teammate spawning, messaging, and task tracking."
+        "MCP server for orchestrating OpenCode agent teams with Kimi K2.5. "
+        "Manages team creation, teammate spawning with Kimi K2.5, messaging, and task tracking."
     ),
     lifespan=app_lifespan,
 )
@@ -75,21 +75,22 @@ def spawn_teammate_tool(
     name: str,
     prompt: str,
     ctx: Context,
-    model: Literal["sonnet", "opus", "haiku"] = "sonnet",
+    model: str = "sonnet",  # Accepts: "sonnet", "opus", "haiku", or "provider/model"
     subagent_type: str = "general-purpose",
     plan_mode_required: bool = False,
 ) -> dict:
-    """Spawn a new Claude Code teammate in a tmux pane. The teammate receives
+    """Spawn a new OpenCode teammate in a tmux pane. The teammate receives
     its initial prompt via inbox and begins working autonomously. Names must
     be unique within the team."""
     ls = _get_lifespan(ctx)
+    resolved_model = translate_model(model, provider=ls.get("provider", "moonshot-ai"))
     member = spawn_teammate(
         team_name=team_name,
         name=name,
         prompt=prompt,
-        claude_binary=ls["claude_binary"],
+        claude_binary=ls["opencode_binary"],
         lead_session_id=ls["session_id"],
-        model=model,
+        model=resolved_model,
         subagent_type=subagent_type,
         plan_mode_required=plan_mode_required,
     )
