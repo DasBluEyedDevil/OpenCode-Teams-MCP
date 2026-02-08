@@ -15,12 +15,10 @@ from claude_teams.models import AgentHealthStatus, COLOR_PALETTE, TeammateMember
 from claude_teams.spawner import (
     assign_color,
     build_opencode_run_command,
-    build_spawn_command,
     capture_pane_content_hash,
     check_pane_alive,
     check_process_alive,
     check_single_agent_health,
-    discover_claude_binary,
     discover_desktop_binary,
     discover_opencode_binary,
     get_credential_env_var,
@@ -77,20 +75,6 @@ def _make_member(
     )
 
 
-class TestDiscoverClaudeBinary:
-    @patch("claude_teams.spawner.shutil.which")
-    def test_found(self, mock_which: MagicMock) -> None:
-        mock_which.return_value = "/usr/local/bin/claude"
-        assert discover_claude_binary() == "/usr/local/bin/claude"
-        mock_which.assert_called_once_with("claude")
-
-    @patch("claude_teams.spawner.shutil.which")
-    def test_not_found(self, mock_which: MagicMock) -> None:
-        mock_which.return_value = None
-        with pytest.raises(FileNotFoundError):
-            discover_claude_binary()
-
-
 class TestAssignColor:
     def test_first_teammate_is_blue(self, team_dir: Path) -> None:
         color = assign_color(TEAM, base_dir=team_dir)
@@ -103,30 +87,6 @@ class TestAssignColor:
 
         color = assign_color(TEAM, base_dir=team_dir)
         assert color == COLOR_PALETTE[0]
-
-
-class TestBuildSpawnCommand:
-    def test_format(self) -> None:
-        member = _make_member("researcher")
-        cmd = build_spawn_command(member, "/usr/local/bin/claude", "lead-sess-1")
-        assert "CLAUDECODE=1" in cmd
-        assert "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1" in cmd
-        assert "/usr/local/bin/claude" in cmd
-        assert "--agent-id" in cmd
-        assert "--agent-name" in cmd
-        assert "--team-name" in cmd
-        assert "--agent-color" in cmd
-        assert "--parent-session-id" in cmd
-        assert "--agent-type" in cmd
-        assert "--model" in cmd
-        assert f"cd /tmp" in cmd
-        assert "--plan-mode-required" not in cmd
-
-    def test_with_plan_mode(self) -> None:
-        member = _make_member("researcher")
-        member.plan_mode_required = True
-        cmd = build_spawn_command(member, "/usr/local/bin/claude", "lead-sess-1")
-        assert "--plan-mode-required" in cmd
 
 
 def _make_opencode_member(

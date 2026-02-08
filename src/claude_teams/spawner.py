@@ -116,43 +116,10 @@ DESKTOP_BINARY_NAMES: dict[str, list[str]] = {
 }
 
 
-def discover_claude_binary() -> str:
-    path = shutil.which("claude")
-    if path is None:
-        raise FileNotFoundError(
-            "Could not find 'claude' binary on PATH. "
-            "Install Claude Code or ensure it is in your PATH."
-        )
-    return path
-
-
 def assign_color(team_name: str, base_dir: Path | None = None) -> str:
     config = teams.read_config(team_name, base_dir)
     count = sum(1 for m in config.members if isinstance(m, TeammateMember))
     return COLOR_PALETTE[count % len(COLOR_PALETTE)]
-
-
-def build_spawn_command(
-    member: TeammateMember,
-    claude_binary: str,
-    lead_session_id: str,
-) -> str:
-    team_name = member.agent_id.split("@", 1)[1]
-    cmd = (
-        f"cd {shlex.quote(member.cwd)} && "
-        f"CLAUDECODE=1 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 "
-        f"{shlex.quote(claude_binary)} "
-        f"--agent-id {shlex.quote(member.agent_id)} "
-        f"--agent-name {shlex.quote(member.name)} "
-        f"--team-name {shlex.quote(team_name)} "
-        f"--agent-color {shlex.quote(member.color)} "
-        f"--parent-session-id {shlex.quote(lead_session_id)} "
-        f"--agent-type {shlex.quote(member.agent_type)} "
-        f"--model {shlex.quote(member.model)}"
-    )
-    if member.plan_mode_required:
-        cmd += " --plan-mode-required"
-    return cmd
 
 
 def build_opencode_run_command(
