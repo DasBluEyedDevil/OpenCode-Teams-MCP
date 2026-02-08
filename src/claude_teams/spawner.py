@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -86,6 +89,30 @@ _PROVIDER_ENV_VARS: dict[str, str] = {
     "moonshot-ai-china": "MOONSHOT_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
     "novita": "NOVITA_API_KEY",
+}
+
+# Desktop app binary discovery constants
+DESKTOP_BINARY_ENV_VAR = "OPENCODE_DESKTOP_BINARY"
+
+DESKTOP_PATHS: dict[str, list[str]] = {
+    "darwin": [
+        "/Applications/OpenCode Desktop.app/Contents/MacOS/OpenCode Desktop",
+        str(Path.home() / "Applications/OpenCode Desktop.app/Contents/MacOS/OpenCode Desktop"),
+    ],
+    "win32": [
+        str(Path.home() / "AppData/Local/Programs/opencode-desktop/opencode-desktop.exe"),
+        str(Path.home() / "AppData/Local/opencode-desktop/opencode-desktop.exe"),
+    ],
+    "linux": [
+        "/usr/bin/opencode-desktop",
+        str(Path.home() / ".local/bin/opencode-desktop"),
+    ],
+}
+
+DESKTOP_BINARY_NAMES: dict[str, list[str]] = {
+    "darwin": ["opencode-desktop"],
+    "win32": ["opencode-desktop.exe", "opencode-desktop"],
+    "linux": ["opencode-desktop", "OpenCode-Desktop.AppImage"],
 }
 
 
@@ -452,6 +479,121 @@ def discover_opencode_binary() -> str:
         )
     validate_opencode_version(path)
     return path
+
+
+def discover_desktop_binary() -> str:
+    """Discover the OpenCode Desktop binary on the current platform.
+
+    Discovery order:
+    1. OPENCODE_DESKTOP_BINARY environment variable (explicit override)
+    2. Known installation paths for the current platform
+    3. PATH search via shutil.which
+
+    Returns:
+        Path to the desktop binary.
+
+    Raises:
+        FileNotFoundError: If the desktop app is not found.
+    """
+    # 1. Environment variable override
+    env_path = os.environ.get(DESKTOP_BINARY_ENV_VAR)
+    if env_path:
+        p = Path(env_path)
+        if p.exists() and p.is_file():
+            return str(p)
+        raise FileNotFoundError(
+            f"{DESKTOP_BINARY_ENV_VAR} is set to {env_path!r} but the file does not exist"
+        )
+
+    platform = sys.platform
+
+    # 2. Known installation paths
+    for path_str in DESKTOP_PATHS.get(platform, []):
+        p = Path(path_str)
+        if p.exists() and p.is_file():
+            return str(p)
+
+    # 3. PATH fallback
+    for name in DESKTOP_BINARY_NAMES.get(platform, ["opencode-desktop"]):
+        found = shutil.which(name)
+        if found:
+            return found
+
+    raise FileNotFoundError(
+        f"Could not find OpenCode Desktop on {platform}. "
+        f"Install from https://opencode.ai/download or set {DESKTOP_BINARY_ENV_VAR}"
+    )
+
+
+def launch_desktop_app(binary_path: str, cwd: str) -> int:
+    """Launch OpenCode Desktop and return its PID.
+
+    Uses subprocess.Popen for direct process creation to get the actual
+    PID. Avoids platform launcher commands (open, start) that don't
+    return the real app PID.
+
+    Args:
+        binary_path: Path to the desktop binary.
+        cwd: Working directory (project root).
+
+    Returns:
+        PID of the launched desktop process.
+    """
+    kwargs: dict = {
+        "cwd": cwd,
+    }
+
+    if sys.platform == "win32":
+        kwargs["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        )
+    else:
+        kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen([binary_path], **kwargs)
+    return proc.pid
+
+
+def check_process_alive(pid: int) -> bool:
+    """Check whether a process with the given PID is still running.
+
+    Cross-platform: uses os.kill(pid, 0) which sends no signal but
+    checks process existence. Raises OSError if the process does not
+    exist.
+
+    Args:
+        pid: Process ID to check.
+
+    Returns:
+        True if the process exists, False otherwise.
+    """
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, SystemError):
+        return False
+
+
+def kill_desktop_process(pid: int) -> None:
+    """Terminate a desktop process by PID.
+
+    Sends SIGTERM on POSIX or calls TerminateProcess on Windows.
+    Does not raise if the process is already dead.
+
+    Args:
+        pid: Process ID to terminate.
+    """
+    if pid <= 0:
+        return
+    try:
+        if sys.platform == "win32":
+            os.kill(pid, signal.SIGTERM)
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except (OSError, SystemError):
+        pass  # Process already dead
 
 
 def validate_opencode_version(binary_path: str) -> str:

@@ -42,6 +42,7 @@ class TeammateMember(BaseModel):
     cwd: str
     subscriptions: list = Field(default_factory=list)
     backend_type: str = Field(alias="backendType", default="tmux")
+    process_id: int = Field(alias="processId", default=0)
     is_active: bool = Field(alias="isActive", default=False)
 
 
