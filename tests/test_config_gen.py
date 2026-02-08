@@ -540,8 +540,11 @@ class TestEnsureOpencodeJson:
         content = json.loads(result_path.read_text(encoding="utf-8"))
         mcp_entry = content["mcp"]["opencode-teams"]
 
-        # OpenCode expects MCP entries as command arrays
-        assert mcp_entry == ["uv", "run", "opencode-teams"]
+        # OpenCode expects McpLocalConfig objects
+        assert mcp_entry == {
+            "type": "local",
+            "command": ["uv", "run", "opencode-teams"],
+        }
 
     def test_mcp_entry_with_complex_command(self, tmp_path: Path) -> None:
         project_dir = tmp_path / "project"
@@ -555,7 +558,25 @@ class TestEnsureOpencodeJson:
         content = json.loads(result_path.read_text(encoding="utf-8"))
         mcp_entry = content["mcp"]["opencode-teams"]
 
-        assert mcp_entry == ["python", "-m", "opencode_teams.server"]
+        assert mcp_entry == {
+            "type": "local",
+            "command": ["python", "-m", "opencode_teams.server"],
+        }
+
+    def test_mcp_entry_includes_environment(self, tmp_path: Path) -> None:
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        result_path = ensure_opencode_json(
+            project_dir,
+            mcp_server_command="uv run opencode-teams",
+            mcp_server_env={"LOG_LEVEL": "debug"},
+        )
+
+        content = json.loads(result_path.read_text(encoding="utf-8"))
+        mcp_entry = content["mcp"]["opencode-teams"]
+
+        assert mcp_entry["environment"] == {"LOG_LEVEL": "debug"}
 
     def test_preserves_existing_config(self, tmp_path: Path) -> None:
         project_dir = tmp_path / "project"
@@ -612,8 +633,11 @@ class TestEnsureOpencodeJson:
 
         content = json.loads(result_path.read_text(encoding="utf-8"))
 
-        # Should update the entry to new command
-        assert content["mcp"]["opencode-teams"] == ["uv", "run", "opencode-teams"]
+        # Should update the entry to new McpLocalConfig
+        assert content["mcp"]["opencode-teams"] == {
+            "type": "local",
+            "command": ["uv", "run", "opencode-teams"],
+        }
 
     def test_creates_mcp_section_if_missing(self, tmp_path: Path) -> None:
         project_dir = tmp_path / "project"

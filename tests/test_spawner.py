@@ -630,13 +630,15 @@ class TestConfigGenIntegration:
         opencode_json = project_dir / ".opencode" / "config.json"
         assert opencode_json.exists()
 
-        # Verify content has opencode-teams MCP entry as array
+        # Verify content has opencode-teams MCP entry as McpLocalConfig
         import json
         content = json.loads(opencode_json.read_text())
         assert "mcp" in content
         assert "opencode-teams" in content["mcp"]
-        # OpenCode expects MCP entries as command arrays
-        assert content["mcp"]["opencode-teams"] == ["uv", "run", "opencode-teams"]
+        # OpenCode expects MCP entries as McpLocalConfig objects
+        mcp_entry = content["mcp"]["opencode-teams"]
+        assert mcp_entry["type"] == "local"
+        assert mcp_entry["command"] == ["uv", "run", "opencode-teams"]
 
     def test_cleanup_agent_config_removes_file(self, tmp_path: Path) -> None:
         """Verify cleanup_agent_config removes the config file"""

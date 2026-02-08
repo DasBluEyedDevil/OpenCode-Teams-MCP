@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import textwrap
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -201,14 +202,13 @@ def ensure_opencode_json(
     If config.json exists, preserves all existing keys and merges the opencode-teams
     MCP entry. If it doesn't exist, creates a new file with schema and MCP config.
 
-    OpenCode expects MCP entries as arrays (command + args), not objects.
-    Example: {"mcp": {"opencode-teams": ["uv", "run", "opencode-teams"]}}
+    OpenCode expects MCP entries as McpLocalConfig objects:
+    Example: {"mcp": {"opencode-teams": {"type": "local", "command": ["uv", "run", "opencode-teams"]}}}
 
     Args:
         project_dir: Project root directory
         mcp_server_command: Command to start MCP server (e.g., "uv run opencode-teams")
-        mcp_server_env: Optional environment variables for MCP server (currently unused,
-            kept for API compatibility)
+        mcp_server_env: Optional environment variables for MCP server
 
     Returns:
         Path to .opencode/config.json
@@ -228,12 +228,18 @@ def ensure_opencode_json(
     # Ensure mcp section exists
     content.setdefault("mcp", {})
 
-    # OpenCode expects MCP entries as command arrays, not objects
-    # Split the command string into array: "uv run opencode-teams" -> ["uv", "run", "opencode-teams"]
+    # OpenCode expects MCP entries as McpLocalConfig objects with type + command array
+    # See: @opencode-ai/sdk types.gen.d.ts McpLocalConfig
     command_parts = mcp_server_command.split()
 
-    # Set the MCP entry as an array
-    content["mcp"]["opencode-teams"] = command_parts
+    mcp_entry: dict[str, Any] = {
+        "type": "local",
+        "command": command_parts,
+    }
+    if mcp_server_env:
+        mcp_entry["environment"] = mcp_server_env
+
+    content["mcp"]["opencode-teams"] = mcp_entry
 
     # Write back
     opencode_json_path.write_text(
