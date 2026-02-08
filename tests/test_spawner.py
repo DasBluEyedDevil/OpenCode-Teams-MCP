@@ -10,6 +10,7 @@ from claude_teams import teams, messaging
 from claude_teams.models import COLOR_PALETTE, TeammateMember
 from claude_teams.spawner import (
     assign_color,
+    build_opencode_run_command,
     build_spawn_command,
     discover_claude_binary,
     discover_opencode_binary,
@@ -23,6 +24,7 @@ from claude_teams.spawner import (
     MODEL_ALIASES,
     PROVIDER_CONFIGS,
     PROVIDER_MODEL_MAP,
+    SPAWN_TIMEOUT_SECONDS,
 )
 
 
@@ -109,6 +111,87 @@ class TestBuildSpawnCommand:
         assert "--plan-mode-required" in cmd
 
 
+def _make_opencode_member(
+    name: str = "researcher",
+    team: str = TEAM,
+    color: str = "blue",
+    model: str = "moonshot-ai/kimi-k2.5",
+    agent_type: str = "general-purpose",
+    cwd: str = "/tmp",
+    prompt: str = "Do research",
+    plan_mode_required: bool = False,
+) -> TeammateMember:
+    return TeammateMember(
+        agent_id=f"{name}@{team}",
+        name=name,
+        agent_type=agent_type,
+        model=model,
+        prompt=prompt,
+        color=color,
+        joined_at=0,
+        tmux_pane_id="",
+        cwd=cwd,
+        plan_mode_required=plan_mode_required,
+    )
+
+
+class TestBuildOpencodeRunCommand:
+    def test_basic_command_format(self) -> None:
+        member = _make_opencode_member()
+        cmd = build_opencode_run_command(member, "/usr/local/bin/opencode")
+        assert "opencode" in cmd
+        assert "run" in cmd
+        assert "--agent" in cmd
+        assert "researcher" in cmd
+        assert "--model" in cmd
+        assert "moonshot-ai/kimi-k2.5" in cmd
+        assert "--format json" in cmd
+        assert "timeout 300" in cmd
+        assert "cd" in cmd
+        assert "/tmp" in cmd
+
+    def test_prompt_is_shell_quoted(self) -> None:
+        member = _make_opencode_member(prompt="Fix 'main.py' bugs")
+        cmd = build_opencode_run_command(member, "/usr/local/bin/opencode")
+        # shlex.quote wraps strings with single quotes; the inner quotes
+        # are escaped. The key test: no unquoted single quotes break the shell.
+        assert "Fix" in cmd
+        assert "main.py" in cmd
+        assert "bugs" in cmd
+
+    def test_special_chars_in_prompt(self) -> None:
+        member = _make_opencode_member(prompt='Use "$HOME" and `backticks`')
+        cmd = build_opencode_run_command(member, "/usr/local/bin/opencode")
+        # shlex.quote should safely wrap the prompt
+        assert "$HOME" in cmd
+        assert "backticks" in cmd
+
+    def test_custom_timeout(self) -> None:
+        member = _make_opencode_member()
+        cmd = build_opencode_run_command(member, "/usr/local/bin/opencode", timeout_seconds=600)
+        assert "timeout 600" in cmd
+        assert "timeout 300" not in cmd
+
+    def test_no_claude_flags(self) -> None:
+        member = _make_opencode_member()
+        cmd = build_opencode_run_command(member, "/usr/local/bin/opencode")
+        assert "--agent-id" not in cmd
+        assert "--team-name" not in cmd
+        assert "--parent-session-id" not in cmd
+        assert "--agent-color" not in cmd
+        assert "--agent-type" not in cmd
+        assert "CLAUDECODE" not in cmd
+        assert "CLAUDE_CODE_EXPERIMENTAL" not in cmd
+
+    def test_no_plan_mode_flag(self) -> None:
+        member = _make_opencode_member(plan_mode_required=True)
+        cmd = build_opencode_run_command(member, "/usr/local/bin/opencode")
+        assert "--plan-mode-required" not in cmd
+
+    def test_default_timeout_constant(self) -> None:
+        assert SPAWN_TIMEOUT_SECONDS == 300
+
+
 class TestSpawnTeammateNameValidation:
     def test_should_reject_empty_name(self, team_dir: Path) -> None:
         with pytest.raises(ValueError, match="Invalid"):
@@ -172,7 +255,7 @@ class TestSpawnTeammate:
             TEAM,
             "researcher",
             "Do research",
-            "/usr/local/bin/claude",
+            "/usr/local/bin/opencode",
             SESSION_ID,
             base_dir=team_dir,
         )
@@ -180,6 +263,27 @@ class TestSpawnTeammate:
         config = teams.read_config(TEAM, base_dir=team_dir)
         found = [m for m in config.members if m.name == "researcher"]
         assert found[0].tmux_pane_id == "%42"
+
+    @patch("claude_teams.spawner.subprocess")
+    def test_spawn_uses_opencode_command(
+        self, mock_subprocess: MagicMock, team_dir: Path
+    ) -> None:
+        """Verify spawn_teammate calls tmux with opencode run command, not Claude flags."""
+        mock_subprocess.run.return_value.stdout = "%42\n"
+        spawn_teammate(
+            TEAM,
+            "researcher",
+            "Do research",
+            "/usr/local/bin/opencode",
+            SESSION_ID,
+            base_dir=team_dir,
+        )
+        # Get the tmux command string (last positional arg to subprocess.run)
+        call_args = mock_subprocess.run.call_args[0][0]
+        tmux_cmd = call_args[-1]  # The shell command passed to tmux split-window
+        assert "opencode" in tmux_cmd
+        assert "run" in tmux_cmd
+        assert "CLAUDECODE" not in tmux_cmd
 
 
 class TestKillTmuxPane:
