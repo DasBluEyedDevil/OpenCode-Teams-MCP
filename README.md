@@ -59,7 +59,7 @@ Or add to `~/.config/opencode/opencode.json` (OpenCode):
 |------|-------------|
 | `team_create` | Create a new agent team. One team per server session. |
 | `team_delete` | Delete a team and all its data. Fails if teammates are still active. |
-| `spawn_teammate` | Spawn a Claude Code teammate in a tmux pane. |
+| `spawn_teammate` | Spawn an OpenCode teammate in a tmux pane or desktop app instance. |
 | `send_message` | Send direct messages, broadcasts, shutdown/plan approval responses. |
 | `read_inbox` | Read messages from an agent's inbox. |
 | `poll_inbox` | Long-poll an inbox for new messages (up to 30s). |
@@ -68,7 +68,10 @@ Or add to `~/.config/opencode/opencode.json` (OpenCode):
 | `task_update` | Update task status, owner, dependencies, or metadata. |
 | `task_list` | List all tasks for a team. |
 | `task_get` | Get full details of a specific task. |
-| `force_kill_teammate` | Forcibly kill a teammate's tmux pane and clean up. |
+| `force_kill_teammate` | Forcibly kill a teammate's tmux pane or desktop process and clean up. |
+| `list_agent_templates` | List available role templates from `.opencode/agents/` directory. |
+| `check_agent_health` | Check the health status (alive, dead, hung) of a single agent. |
+| `check_all_agents_health` | Check the health status of all agents in the current team. |
 | `process_shutdown_approved` | Remove a teammate after graceful shutdown approval. |
 
 ## How it works
