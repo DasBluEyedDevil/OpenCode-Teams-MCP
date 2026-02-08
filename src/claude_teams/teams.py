@@ -40,7 +40,7 @@ def create_team(
     name: str,
     session_id: str,
     description: str = "",
-    lead_model: str = "claude-opus-4-6",
+    lead_model: str = "moonshot-ai/kimi-k2.5",
     base_dir: Path | None = None,
 ) -> TeamCreateResult:
     if not _VALID_NAME_RE.match(name):

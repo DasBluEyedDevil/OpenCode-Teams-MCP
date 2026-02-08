@@ -23,7 +23,7 @@ def _make_teammate(name: str, team_name: str) -> TeammateMember:
         agent_id=f"{name}@{team_name}",
         name=name,
         agent_type="teammate",
-        model="claude-sonnet-4-20250514",
+        model="moonshot-ai/kimi-k2.5",
         prompt="Do stuff",
         color="blue",
         plan_mode_required=False,
