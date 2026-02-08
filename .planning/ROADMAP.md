@@ -13,7 +13,7 @@ This roadmap replaces the Claude Code spawning layer with OpenCode CLI + Kimi K2
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Binary Discovery & Model Configuration** - Find OpenCode on PATH and translate model specifications to Kimi K2.5 format ✓
-- [ ] **Phase 2: Agent Config Generation** - Dynamically generate `.opencode/agents/<name>.md` files with team context, MCP tools, and permissions
+- [x] **Phase 2: Agent Config Generation** - Dynamically generate `.opencode/agents/<name>.md` files with team context, MCP tools, and permissions ✓
 - [ ] **Phase 3: Spawn Execution** - Construct and execute `opencode run` commands in tmux panes with timeout protection
 - [ ] **Phase 4: MCP Communication Validation** - Verify spawned agents can exchange messages and share state through the MCP server
 - [ ] **Phase 5: Agent Health & Monitoring** - Detect dead/hung agents and force-kill unresponsive instances
@@ -53,8 +53,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- Config generation module with TDD: generate_agent_config, write_agent_config, ensure_opencode_json
-- [ ] 02-02-PLAN.md -- Wire config generation into spawn flow and add cleanup on kill/shutdown
+- [x] 02-01-PLAN.md -- Config generation module with TDD: generate_agent_config, write_agent_config, ensure_opencode_json ✓
+- [x] 02-02-PLAN.md -- Wire config generation into spawn flow and add cleanup on kill/shutdown ✓
 
 ### Phase 3: Spawn Execution
 **Goal**: The system can launch an OpenCode agent in a tmux pane with a correct command, track its pane ID, and deliver an initial task prompt
@@ -155,7 +155,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Binary Discovery & Model Configuration | 2/2 | ✓ Complete | 2026-02-08 |
-| 2. Agent Config Generation | 0/2 | Planning complete | - |
+| 2. Agent Config Generation | 2/2 | ✓ Complete | 2026-02-08 |
 | 3. Spawn Execution | 0/3 | Not started | - |
 | 4. MCP Communication Validation | 0/2 | Not started | - |
 | 5. Agent Health & Monitoring | 0/2 | Not started | - |
