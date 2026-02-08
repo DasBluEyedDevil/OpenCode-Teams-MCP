@@ -37,9 +37,23 @@ from opencode_teams.templates import TEMPLATES, get_template, list_templates
 
 @lifespan
 async def app_lifespan(server):
-    opencode_binary = discover_opencode_binary()
+    import logging
+    logger = logging.getLogger("opencode-teams")
+    
+    opencode_binary = None
+    try:
+        opencode_binary = discover_opencode_binary()
+    except (FileNotFoundError, RuntimeError) as e:
+        # Log but don't fail - the error will be reported when tools are called
+        logger.warning(f"OpenCode binary not available: {e}")
+    
     session_id = str(uuid.uuid4())
-    yield {"opencode_binary": opencode_binary, "session_id": session_id, "active_team": None, "provider": "moonshot-ai"}
+    yield {
+        "opencode_binary": opencode_binary,
+        "session_id": session_id,
+        "active_team": None,
+        "provider": "moonshot-ai"
+    }
 
 
 mcp = FastMCP(
@@ -104,6 +118,13 @@ def spawn_teammate_tool(
     a role (researcher, implementer, reviewer, tester). Use list_agent_templates
     to see available templates."""
     ls = _get_lifespan(ctx)
+    opencode_binary = ls.get("opencode_binary")
+    if opencode_binary is None:
+        raise ToolError(
+            "OpenCode binary not found or version too old. "
+            "Please ensure opencode CLI v1.1.52+ is installed and on PATH. "
+            "Install with: npm install -g opencode@latest"
+        )
     resolved_model = translate_model(model, provider=ls.get("provider", "moonshot-ai"))
 
     # Template lookup
@@ -127,7 +148,7 @@ def spawn_teammate_tool(
         team_name=team_name,
         name=name,
         prompt=prompt,
-        opencode_binary=ls["opencode_binary"],
+        opencode_binary=opencode_binary,
         model=resolved_model,
         subagent_type=template or "general-purpose",
         role_instructions=role_instructions,
