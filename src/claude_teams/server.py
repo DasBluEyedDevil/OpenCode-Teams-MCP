@@ -138,13 +138,13 @@ def send_message(
                 target_color = m.color
                 break
         messaging.send_plain_message(
-            team_name, "team-lead", recipient, content, summary=summary, color=target_color,
+            team_name, sender, recipient, content, summary=summary, color=target_color,
         )
         return SendMessageResult(
             success=True,
             message=f"Message sent to {recipient}",
             routing={
-                "sender": "team-lead",
+                "sender": sender,
                 "target": recipient,
                 "targetColor": target_color,
                 "summary": summary,
