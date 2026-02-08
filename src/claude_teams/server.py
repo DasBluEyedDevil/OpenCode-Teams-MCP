@@ -89,7 +89,7 @@ def spawn_teammate_tool(
         team_name=team_name,
         name=name,
         prompt=prompt,
-        claude_binary=ls["opencode_binary"],
+        opencode_binary=ls["opencode_binary"],
         lead_session_id=ls["session_id"],
         model=resolved_model,
         subagent_type=subagent_type,

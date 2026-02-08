@@ -16,6 +16,7 @@ from claude_teams.teams import _VALID_NAME_RE
 # OpenCode binary discovery and configuration constants
 MINIMUM_OPENCODE_VERSION = (1, 1, 52)
 DEFAULT_PROVIDER = "moonshot-ai"
+SPAWN_TIMEOUT_SECONDS = 300
 
 # Kimi K2.5 is the only supported model; all Claude aliases are equivalent
 MODEL_ALIASES: dict[str, str] = {
@@ -125,11 +126,40 @@ def build_spawn_command(
     return cmd
 
 
+def build_opencode_run_command(
+    member: TeammateMember,
+    opencode_binary: str,
+    timeout_seconds: int = SPAWN_TIMEOUT_SECONDS,
+) -> str:
+    """Build the shell command to run an OpenCode agent in a tmux pane.
+
+    Constructs a command with cd, timeout wrapping, and opencode run flags.
+    Does NOT include any Claude Code flags or environment variables.
+
+    Args:
+        member: The teammate member with name, model, prompt, and cwd.
+        opencode_binary: Path to the opencode binary.
+        timeout_seconds: Maximum seconds before the process is killed (default: 300).
+
+    Returns:
+        Shell command string suitable for tmux split-window.
+    """
+    return (
+        f"cd {shlex.quote(member.cwd)} && "
+        f"timeout {timeout_seconds} "
+        f"{shlex.quote(opencode_binary)} run "
+        f"--agent {shlex.quote(member.name)} "
+        f"--model {shlex.quote(member.model)} "
+        f"--format json "
+        f"{shlex.quote(member.prompt)}"
+    )
+
+
 def spawn_teammate(
     team_name: str,
     name: str,
     prompt: str,
-    claude_binary: str,
+    opencode_binary: str,
     lead_session_id: str,
     *,
     model: str = "sonnet",
@@ -187,7 +217,7 @@ def spawn_teammate(
     write_agent_config(project, name, config_content)
     ensure_opencode_json(project, mcp_server_command="uv run claude-teams")
 
-    cmd = build_spawn_command(member, claude_binary, lead_session_id)
+    cmd = build_opencode_run_command(member, opencode_binary)
     result = subprocess.run(
         ["tmux", "split-window", "-dP", "-F", "#{pane_id}", cmd],
         capture_output=True,
