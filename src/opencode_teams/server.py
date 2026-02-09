@@ -46,12 +46,16 @@ async def app_lifespan(server):
     import logging
     logger = logging.getLogger("opencode-teams")
 
+    _log_activity("SERVER STARTING - lifespan begin")
+
     opencode_binary = None
     try:
         opencode_binary = discover_opencode_binary()
+        _log_activity(f"OpenCode binary found: {opencode_binary}")
     except (FileNotFoundError, RuntimeError) as e:
         # Log but don't fail - the error will be reported when tools are called
         logger.warning(f"OpenCode binary not available: {e}")
+        _log_activity(f"OpenCode binary not found: {e}")
 
     # Discover available models from OpenCode config
     available_models = discover_models()
@@ -60,14 +64,21 @@ async def app_lifespan(server):
             "No models found in OpenCode config. "
             "Configure providers in ~/.config/opencode/opencode.json"
         )
+        _log_activity("No models found in OpenCode config")
+    else:
+        _log_activity(f"Discovered {len(available_models)} models")
 
     session_id = str(uuid.uuid4())
-    yield {
-        "opencode_binary": opencode_binary,
-        "session_id": session_id,
-        "active_team": None,
-        "available_models": available_models,
-    }
+    _log_activity(f"SERVER READY - session_id={session_id}")
+    try:
+        yield {
+            "opencode_binary": opencode_binary,
+            "session_id": session_id,
+            "active_team": None,
+            "available_models": available_models,
+        }
+    finally:
+        _log_activity("SERVER SHUTTING DOWN - lifespan end")
 
 
 mcp = FastMCP(
@@ -243,6 +254,7 @@ def spawn_teammate_tool(
 
     The teammate receives its initial prompt via inbox and begins working
     autonomously. Names must be unique within the team."""
+    _log_activity(f"TOOL CALL: spawn_teammate team={team_name} name={name} model={model}")
     ls = _get_lifespan(ctx)
     opencode_binary = ls.get("opencode_binary")
     if opencode_binary is None:
@@ -319,6 +331,7 @@ def spawn_teammate_tool(
         plan_mode_required=plan_mode_required,
         project_dir=Path.cwd(),
     )
+    _log_activity(f"TOOL DONE: spawn_teammate agent_id={member.agent_id}")
     return SpawnResult(
         agent_id=member.agent_id,
         name=member.name,
@@ -713,9 +726,29 @@ def check_all_agents_health(
     return results
 
 
+def _get_log_dir() -> Path:
+    """Get path to log directory."""
+    log_dir = Path.home() / ".opencode-teams" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
 def _get_crash_log_path() -> Path:
     """Get path to crash log file."""
-    return Path.home() / ".opencode-teams" / "crash.log"
+    return _get_log_dir() / "crash.log"
+
+
+def _get_activity_log_path() -> Path:
+    """Get path to activity log file."""
+    return _get_log_dir() / "activity.log"
+
+
+def _log_activity(message: str):
+    """Log MCP activity for debugging disconnects."""
+    log_path = _get_activity_log_path()
+    timestamp = datetime.now().isoformat()
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}] {message}\n")
 
 
 def _log_crash(exc_type, exc_value, exc_tb):
