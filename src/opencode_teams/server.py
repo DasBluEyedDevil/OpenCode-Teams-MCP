@@ -1,6 +1,9 @@
 import asyncio
+import sys
 import time
+import traceback
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -710,7 +713,52 @@ def check_all_agents_health(
     return results
 
 
+def _get_crash_log_path() -> Path:
+    """Get path to crash log file."""
+    return Path.home() / ".opencode-teams" / "crash.log"
+
+
+def _log_crash(exc_type, exc_value, exc_tb):
+    """Log unhandled exceptions to crash.log for debugging MCP disconnects."""
+    log_path = _get_crash_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"\n{'='*60}\n")
+        f.write(f"CRASH at {datetime.now().isoformat()}\n")
+        f.write(f"{'='*60}\n")
+        traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
+        f.write("\n")
+
+
+def _handle_async_exception(loop, context):
+    """Handle exceptions in async tasks that would otherwise be silently dropped."""
+    log_path = _get_crash_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"\n{'='*60}\n")
+        f.write(f"ASYNC EXCEPTION at {datetime.now().isoformat()}\n")
+        f.write(f"{'='*60}\n")
+        f.write(f"Message: {context.get('message', 'No message')}\n")
+        if "exception" in context:
+            f.write("Exception:\n")
+            traceback.print_exception(
+                type(context["exception"]),
+                context["exception"],
+                context["exception"].__traceback__,
+                file=f,
+            )
+        f.write(f"Context: {context}\n\n")
+
+
 def main():
+    # Install crash handlers for debugging MCP disconnects
+    sys.excepthook = _log_crash
+
+    # Also catch unhandled exceptions in asyncio tasks
+    loop = asyncio.new_event_loop()
+    loop.set_exception_handler(_handle_async_exception)
+    asyncio.set_event_loop(loop)
+
     mcp.run()
 
 
