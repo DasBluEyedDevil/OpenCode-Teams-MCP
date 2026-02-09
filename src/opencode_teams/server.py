@@ -10,6 +10,7 @@ from fastmcp.server.lifespan import lifespan
 
 from opencode_teams import messaging, tasks, teams
 from opencode_teams.model_discovery import discover_models, resolve_model_string
+from opencode_teams.task_analysis import infer_model_preference
 from opencode_teams.models import (
     AgentHealthStatus,
     COLOR_PALETTE,
@@ -249,10 +250,14 @@ def spawn_teammate_tool(
         )
 
     # Build preference for model selection
-    preference = ModelPreference(
-        reasoning_effort=reasoning_effort,
-        prefer_speed=prefer_speed,
-    )
+    # Infer from prompt; explicit params override inferred values
+    explicit_pref = None
+    if reasoning_effort or prefer_speed:
+        explicit_pref = ModelPreference(
+            reasoning_effort=reasoning_effort,
+            prefer_speed=prefer_speed,
+        )
+    preference = infer_model_preference(prompt, explicit=explicit_pref)
     available_models = ls.get("available_models", [])
 
     try:
