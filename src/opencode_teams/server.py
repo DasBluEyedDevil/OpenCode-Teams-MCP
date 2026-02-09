@@ -34,7 +34,6 @@ from opencode_teams.spawner import (
     spawn_teammate,
     translate_model,
 )
-from opencode_teams.templates import TEMPLATES, get_template, list_templates
 
 
 @lifespan
@@ -77,8 +76,7 @@ Do NOT create your own coordination frameworks or agent patterns.
 - `server_status()` — Check MCP server health.
 
 ### Agent Spawning
-- `spawn_teammate(team_name, name, prompt, model, template, backend)` — Spawn a new agent.
-- `list_agent_templates()` — List available role templates.
+- `spawn_teammate(team_name, name, prompt, instructions, model, backend)` — Spawn a new agent.
 - `force_kill_teammate(team_name, agent_name)` — Force-stop an agent.
 - `check_agent_health(team_name, agent_name)` — Check if agent is alive/dead/hung.
 - `check_all_agents_health(team_name)` — Check health of all agents.
@@ -97,10 +95,12 @@ Do NOT create your own coordination frameworks or agent patterns.
 ## Workflow
 1. `team_create` — create the team
 2. `task_create` — create tasks for the work
-3. `spawn_teammate` — spawn agents (use `template` for roles: researcher, implementer, reviewer, tester)
+3. `spawn_teammate` — spawn agents with task-specific `instructions` tailored to the problem
 4. `check_all_agents_health` + `read_inbox` — monitor progress
 5. `send_message(type="shutdown_request")` — shut down agents when done
 6. `team_delete` — clean up
+
+Agent configs are generated dynamically per-spawn and purged on shutdown/kill.
 
 IMPORTANT: These are MCP tools. Call them as tool invocations, not slash commands.""",
     lifespan=app_lifespan,
@@ -164,25 +164,27 @@ def spawn_teammate_tool(
     name: str,
     prompt: str,
     ctx: Context,
+    instructions: str = "",  # Task-specific system prompt instructions for this agent
     model: str = "sonnet",  # Accepts: "sonnet", "opus", "haiku", or "provider/model"
-    template: str = "",  # "researcher", "implementer", "reviewer", "tester", or "" for generic
-    custom_instructions: str = "",  # Additional system prompt instructions to customize the agent
     plan_mode_required: bool = False,
     backend: str = "auto",  # "auto", "tmux", "windows_terminal", or "desktop"
 ) -> dict:
-    """Spawn a new OpenCode teammate. Backend options:
+    """Spawn a new OpenCode teammate with dynamically generated configuration.
+
+    Agent configs are created on spawn and purged on shutdown/kill.
+    Use `instructions` to tailor the agent's role and behavior for the specific task.
+
+    Backend options:
     - 'auto' (default): Uses tmux if available, windows_terminal on Windows, otherwise desktop app
     - 'tmux': Spawn in a tmux pane (requires tmux installed)
     - 'windows_terminal': Spawn in a new PowerShell window (Windows only)
     - 'desktop': Launch the OpenCode desktop app (GUI, requires manual interaction)
 
-    All spawned agents connect to this MCP server via the project's .opencode/config.json,
+    All spawned agents connect to this MCP server via the project's opencode.json,
     enabling communication through file-based inboxes.
 
     The teammate receives its initial prompt via inbox and begins working
-    autonomously. Names must be unique within the team. Use template to assign
-    a role (researcher, implementer, reviewer, tester). Use list_agent_templates
-    to see available templates."""
+    autonomously. Names must be unique within the team."""
     ls = _get_lifespan(ctx)
     opencode_binary = ls.get("opencode_binary")
     if opencode_binary is None:
@@ -192,15 +194,6 @@ def spawn_teammate_tool(
             "Install with: npm install -g opencode@latest"
         )
     resolved_model = translate_model(model, provider=ls.get("provider", "moonshot-ai"))
-
-    # Template lookup
-    role_instructions = ""
-    if template:
-        tmpl = get_template(template)
-        if tmpl is None:
-            available = ", ".join(sorted(TEMPLATES.keys()))
-            raise ToolError(f"Unknown template: {template!r}. Available: {available}")
-        role_instructions = tmpl.role_instructions
 
     # Resolve backend: auto-detect best option
     effective_backend = backend
@@ -245,9 +238,9 @@ def spawn_teammate_tool(
         prompt=prompt,
         opencode_binary=opencode_binary,
         model=resolved_model,
-        subagent_type=template or "general-purpose",
-        role_instructions=role_instructions,
-        custom_instructions=custom_instructions,
+        subagent_type="general-purpose",
+        role_instructions="",  # No predefined templates; use dynamic instructions
+        custom_instructions=instructions,
         backend_type=effective_backend,
         desktop_binary=desktop_binary,
         plan_mode_required=plan_mode_required,
@@ -258,14 +251,6 @@ def spawn_teammate_tool(
         name=member.name,
         team_name=team_name,
     ).model_dump()
-
-
-@mcp.tool
-def list_agent_templates() -> list[dict]:
-    """List all available agent templates with their name and description.
-    Templates provide role-specific system prompts for spawned agents.
-    Use the template name with spawn_teammate's template parameter."""
-    return list_templates()
 
 
 @mcp.tool

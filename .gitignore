@@ -14,3 +14,6 @@ venv/
 *.so
 .DS_Store
 .mcp.json
+
+# Generated agent configs (ephemeral, per-session)
+.opencode/agents/
