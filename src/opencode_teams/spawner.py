@@ -199,11 +199,14 @@ def spawn_teammate(
     color = assign_color(team_name, base_dir)
     now_ms = int(time.time() * 1000)
 
+    # Translate model alias to full provider/model string for OpenCode CLI
+    resolved_model = translate_model(model)
+
     member = TeammateMember(
         agent_id=f"{name}@{team_name}",
         name=name,
         agent_type=subagent_type,
-        model=model,
+        model=resolved_model,
         prompt=prompt,
         color=color,
         plan_mode_required=plan_mode_required,
@@ -234,7 +237,7 @@ def spawn_teammate(
             name=name,
             team_name=team_name,
             color=color,
-            model=model,
+            model=resolved_model,
             role_instructions=role_instructions,
             custom_instructions=custom_instructions,
         )
