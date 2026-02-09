@@ -63,21 +63,24 @@ mcp = FastMCP(
     instructions="""\
 MCP server for orchestrating OpenCode agent teams.
 
-## Available Tools
+CRITICAL: You MUST use `opencode-teams_*` MCP tools for ALL team coordination.
+Do NOT use built-in Task/General Agent tools to spawn subagents.
+Do NOT use built-in TodoWrite/TodoRead for task tracking.
+Do NOT create your own coordination frameworks or agent patterns.
 
-Use these tools (prefixed with `opencode-teams_` in OpenCode) for ALL team operations:
+## Available Tools (prefixed `opencode-teams_` in OpenCode)
 
 ### Team Management
-- `team_create(team_name, description)` — Create a new team. One team per session.
-- `team_delete(team_name)` — Delete a team (must remove all members first).
-- `read_config(team_name)` — Read current team configuration and members.
-- `server_status()` — Check MCP server health and session state.
+- `team_create(team_name, description)` — Create a new team. Always do this first.
+- `team_delete(team_name)` — Delete a team (remove all members first).
+- `read_config(team_name)` — Read team config and members.
+- `server_status()` — Check MCP server health.
 
 ### Agent Spawning
 - `spawn_teammate(team_name, name, prompt, model, template, backend)` — Spawn a new agent.
-- `list_agent_templates()` — List available agent role templates.
+- `list_agent_templates()` — List available role templates.
 - `force_kill_teammate(team_name, agent_name)` — Force-stop an agent.
-- `check_agent_health(team_name, agent_name)` — Check if an agent is alive/dead/hung.
+- `check_agent_health(team_name, agent_name)` — Check if agent is alive/dead/hung.
 - `check_all_agents_health(team_name)` — Check health of all agents.
 
 ### Messaging
@@ -91,14 +94,15 @@ Use these tools (prefixed with `opencode-teams_` in OpenCode) for ALL team opera
 - `task_list(team_name)` — List all tasks.
 - `task_get(team_name, task_id)` — Get task details.
 
-## Typical Workflow
-1. Create a team with `team_create`
-2. Create tasks with `task_create`
-3. Spawn agents with `spawn_teammate`
-4. Monitor with `check_all_agents_health` and `read_inbox`
-5. Shut down agents and delete team when done
+## Workflow
+1. `team_create` — create the team
+2. `task_create` — create tasks for the work
+3. `spawn_teammate` — spawn agents (use `template` for roles: researcher, implementer, reviewer, tester)
+4. `check_all_agents_health` + `read_inbox` — monitor progress
+5. `send_message(type="shutdown_request")` — shut down agents when done
+6. `team_delete` — clean up
 
-IMPORTANT: These are MCP tools, not built-in commands. Call them as tool invocations.""",
+IMPORTANT: These are MCP tools. Call them as tool invocations, not slash commands.""",
     lifespan=app_lifespan,
 )
 
