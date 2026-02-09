@@ -784,15 +784,17 @@ def _handle_async_exception(loop, context):
 
 
 def main():
-    # Install crash handlers for debugging MCP disconnects
+    # Install crash handler for debugging MCP disconnects
     sys.excepthook = _log_crash
+    _log_activity("MAIN STARTING")
 
-    # Also catch unhandled exceptions in asyncio tasks
-    loop = asyncio.new_event_loop()
-    loop.set_exception_handler(_handle_async_exception)
-    asyncio.set_event_loop(loop)
-
-    mcp.run()
+    try:
+        mcp.run()
+    except Exception as e:
+        _log_activity(f"MAIN EXCEPTION: {type(e).__name__}: {e}")
+        raise
+    finally:
+        _log_activity("MAIN EXITED")
 
 
 if __name__ == "__main__":

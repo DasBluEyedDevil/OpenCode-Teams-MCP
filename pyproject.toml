@@ -21,7 +21,7 @@ dev = [
 ]
 
 [project.scripts]
-opencode-teams = "opencode_teams.server:main"
+opencode-teams = "opencode_teams.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/opencode_teams"]
